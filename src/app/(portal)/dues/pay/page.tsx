@@ -31,6 +31,12 @@ function PayDuesFormContent() {
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
 
+  React.useEffect(() => {
+    if (profile?.role === "super_admin") {
+      router.push("/dashboard");
+    }
+  }, [profile, router]);
+
   // Pre-fill from URL params (from tracker "Pay Now" button)
   const prefilledYear = searchParams.get("year");
   const prefilledSession = searchParams.get("session");

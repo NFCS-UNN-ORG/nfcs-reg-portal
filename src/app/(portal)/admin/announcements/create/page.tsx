@@ -101,6 +101,21 @@ export default function CreateAnnouncementPage() {
             </div>
 
             <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text-secondary">
+                Event / Expiry Date <span className="text-text-tertiary font-normal">— optional</span>
+              </label>
+              <input
+                name="event_date"
+                type="date"
+                disabled={isLoading}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-[13px] text-text-primary focus:border-brand-accent focus:outline-none transition-all"
+              />
+              <p className="text-[10px] text-text-tertiary">
+                After this date, the announcement will move to &quot;Past Announcements&quot; in the feed.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
               <label className="text-xs font-semibold text-text-secondary">Message Content</label>
               <textarea
                 name="body"

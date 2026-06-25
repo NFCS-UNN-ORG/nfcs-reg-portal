@@ -16,10 +16,18 @@ import {
   Home,
   Moon,
   Sun,
+  Laptop,
 } from "lucide-react";
 import { logout } from "@/lib/actions/auth.actions";
 import Link from "next/link";
 import { useTheme } from "@/lib/utils/theme";
+import {
+  SelectPrimitive,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "@/components/ui/select";
 
 interface NavbarProps {
   onMenuToggle?: () => void;
@@ -29,7 +37,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { profile } = useUser();
-  const { resolvedTheme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
 
   const handleLogout = async () => {
@@ -99,18 +107,43 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
           />
         </div>
 
-        {/* Theme Toggle Button */}
-        <button
-          onClick={toggleTheme}
-          aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          className="relative flex h-9 w-9 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-page transition-all duration-200 border-none bg-transparent group"
+        {/* Theme Select Dropdown */}
+        <SelectPrimitive.Root
+          value={theme}
+          onValueChange={(val) => setTheme(val as any)}
         >
-          {resolvedTheme === "dark" ? (
-            <Sun className="h-[18px] w-[18px] text-amber-honey transition-transform group-hover:rotate-12" />
-          ) : (
-            <Moon className="h-[18px] w-[18px] transition-transform group-hover:-rotate-12" />
-          )}
-        </button>
+          <SelectTrigger
+            className="h-9 w-[110px] rounded-lg border-none bg-transparent px-2 text-xs hover:bg-surface-page focus:ring-0 focus:shadow-none gap-1 text-text-secondary"
+            size="sm"
+          >
+            <span className="flex items-center gap-1.5">
+              {theme === "light" && <Sun className="h-4 w-4 text-amber-honey" />}
+              {theme === "dark" && <Moon className="h-4 w-4" />}
+              {theme === "system" && <Laptop className="h-4 w-4" />}
+              <SelectValue />
+            </span>
+          </SelectTrigger>
+          <SelectPopup align="end" className="w-[125px]">
+            <SelectItem value="light">
+              <span className="flex items-center gap-1.5">
+                <Sun className="h-3.5 w-3.5 text-amber-honey" />
+                <span>Light</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="dark">
+              <span className="flex items-center gap-1.5">
+                <Moon className="h-3.5 w-3.5" />
+                <span>Dark</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="system">
+              <span className="flex items-center gap-1.5">
+                <Laptop className="h-3.5 w-3.5" />
+                <span>System</span>
+              </span>
+            </SelectItem>
+          </SelectPopup>
+        </SelectPrimitive.Root>
 
         {/* Notifications Icon Button */}
         <button className="relative flex h-9 w-9 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-page transition-colors border-none bg-transparent">

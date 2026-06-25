@@ -63,7 +63,7 @@ export function Sidebar() {
       name: "Dues & Payments",
       href: "/dues",
       icon: CreditCard,
-      roles: ["student", "alumnus", "exco", "super_admin"],
+      roles: ["student", "alumnus", "exco"],
     },
     {
       name: "Events",

@@ -398,9 +398,15 @@ export async function updateMemberRole(
   excoId: string
 ) {
   try {
+    const updateData: any = { role };
+    // When demoting from exco, clear their position
+    if (role !== "exco") {
+      updateData.position = null;
+    }
+
     const { error } = await adminClient
       .from("profiles")
-      .update({ role })
+      .update(updateData)
       .eq("id", memberId);
 
     if (error) {
@@ -504,6 +510,7 @@ export async function updateMemberBiodata(formData: FormData, adminId: string, t
     const academic_level = formData.get("academic_level") as string || null;
     const matric_number = formData.get("matric_number") as string || null;
     const organ = formData.get("organ") as any || null;
+    const position = formData.get("position") as string || null;
 
     if (!full_name) {
       return { error: "Full Name is required" };
@@ -522,6 +529,11 @@ export async function updateMemberBiodata(formData: FormData, adminId: string, t
       matric_number,
       organ,
     };
+
+    // Only persist position if provided (exco-specific field)
+    if (position !== undefined) {
+      updateData.position = position || null;
+    }
 
     const { error } = await adminClient
       .from("profiles")
@@ -544,6 +556,54 @@ export async function updateMemberBiodata(formData: FormData, adminId: string, t
     return { success: true };
   } catch (err: any) {
     return { error: err?.message || "An error occurred during profile update." };
+  }
+}
+
+export async function updateExcoPosition(
+  memberId: string,
+  position: string | null,
+  adminId: string
+) {
+  try {
+    // If assigning a position, check uniqueness among active excos (excluding this member)
+    if (position) {
+      const { data: existing } = await adminClient
+        .from("profiles")
+        .select("id, full_name")
+        .eq("position", position)
+        .eq("role", "exco")
+        .neq("id", memberId)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        return {
+          error: `Position "${position}" is already held by ${existing[0].full_name}. Each position can only be assigned to one exco member.`,
+        };
+      }
+    }
+
+    const { error } = await adminClient
+      .from("profiles")
+      .update({ position: position || null })
+      .eq("id", memberId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    await adminClient.from("audit_log").insert({
+      actor_id: adminId,
+      action: "update_exco_position",
+      target_type: "profile",
+      target_id: memberId,
+      metadata: { position },
+    });
+
+    revalidatePath("/admin/members");
+    revalidatePath(`/admin/members/${memberId}`);
+    return { success: true };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to update exco position" };
   }
 }
 

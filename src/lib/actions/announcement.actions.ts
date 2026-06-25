@@ -7,6 +7,7 @@ export async function createAnnouncement(formData: FormData, excoId: string) {
   const title = formData.get("title") as string;
   const body = formData.get("body") as string;
   const organ = formData.get("organ") as string || null;
+  const event_date = formData.get("event_date") as string || null;
 
   if (!title || !body) {
     return { error: "Title and message content are required" };
@@ -19,6 +20,7 @@ export async function createAnnouncement(formData: FormData, excoId: string) {
         title,
         body,
         organ: organ ? (organ as any) : null,
+        event_date: event_date || null,
         is_published: true,
         published_at: new Date().toISOString(),
         created_by: excoId,

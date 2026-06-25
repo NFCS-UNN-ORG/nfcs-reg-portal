@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { Select } from "@/components/ui/select";
 import { ORGANS } from "@/lib/validations/member.schema";
-import { UNN_CAMPUS_DATA, UNN_HOSTELS } from "@/lib/utils/unn-data";
+import { UNN_CAMPUS_DATA, UNN_HOSTELS, NFCS_SOCIETIES } from "@/lib/utils/unn-data";
 import { 
   User, 
   Mail, 
@@ -304,6 +304,18 @@ export default function ProfilePage() {
                   <p className="text-[10px] text-text-tertiary">Scope Organ</p>
                 </div>
               </div>
+
+              {profile.role === "exco" && (
+                <div className="flex items-center gap-3 text-xs text-text-secondary animate-in fade-in duration-300">
+                  <Award className="h-4 w-4 text-text-tertiary shrink-0" />
+                  <div>
+                    <p className="font-semibold text-text-primary">
+                      {profile.position || "Not Assigned"}
+                    </p>
+                    <p className="text-[10px] text-text-tertiary">Exco Position</p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -410,17 +422,21 @@ export default function ProfilePage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {/* Catholic Society */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-text-secondary">Catholic Society (e.g. Charismatic, CYON)</label>
-                    <div className="relative">
-                      <Church className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
-                      <Input 
-                        name="society"
-                        placeholder="CYON"
-                        defaultValue={profile.society || ""}
-                        disabled={isLoading}
-                        className="pl-9 text-xs"
-                      />
-                    </div>
+                    <label className="text-xs font-semibold text-text-secondary">Catholic Society / Devotional Group</label>
+                    <Select 
+                      name="society"
+                      defaultValue={profile.society || ""}
+                      disabled={isLoading}
+                      className="text-xs"
+                    >
+                      <option value="">Select Devotional Society / Unit</option>
+                      {NFCS_SOCIETIES.map((soc) => (
+                        <option key={soc} value={soc}>{soc}</option>
+                      ))}
+                      {profile.society && !NFCS_SOCIETIES.includes(profile.society as any) && (
+                        <option value={profile.society}>{profile.society}</option>
+                      )}
+                    </Select>
                   </div>
 
                   {/* Home Parish */}

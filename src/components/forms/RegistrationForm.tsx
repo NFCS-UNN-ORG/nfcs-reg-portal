@@ -38,6 +38,20 @@ export function RegistrationForm() {
   const [showPassword, setShowPassword] = React.useState(false);
   const [currentStep, setCurrentStep] = React.useState(0);
 
+  const [minPasswordLength, setMinPasswordLength] = React.useState(6);
+  const [requireNumbers, setRequireNumbers] = React.useState(false);
+  const [requireSymbols, setRequireSymbols] = React.useState(false);
+
+  React.useEffect(() => {
+    const savedLength = localStorage.getItem("settings_sec_min_length");
+    const savedNum = localStorage.getItem("settings_sec_req_num");
+    const savedSym = localStorage.getItem("settings_sec_req_sym");
+
+    if (savedLength) setMinPasswordLength(parseInt(savedLength, 10));
+    if (savedNum !== null) setRequireNumbers(savedNum === "true");
+    if (savedSym !== null) setRequireSymbols(savedSym === "true");
+  }, []);
+
   const {
     register,
     handleSubmit,
@@ -63,7 +77,8 @@ export function RegistrationForm() {
     lowercase: /[a-z]/.test(passwordVal),
     uppercase: /[A-Z]/.test(passwordVal),
     numbers: /[0-9]/.test(passwordVal),
-    length: passwordVal.length >= 6,
+    special: /[^a-zA-Z0-9]/.test(passwordVal),
+    length: passwordVal.length >= minPasswordLength,
   };
 
   const handleNext = async () => {
@@ -90,6 +105,22 @@ export function RegistrationForm() {
   const onSubmit = async (values: SignupFormValues) => {
     setIsLoading(true);
     setError(null);
+
+    if (values.password.length < minPasswordLength) {
+      setError(`Password must be at least ${minPasswordLength} characters.`);
+      setIsLoading(false);
+      return;
+    }
+    if (requireNumbers && !/[0-9]/.test(values.password)) {
+      setError("Password must contain at least one numeric digit.");
+      setIsLoading(false);
+      return;
+    }
+    if (requireSymbols && !/[^a-zA-Z0-9]/.test(values.password)) {
+      setError("Password must contain at least one special character.");
+      setIsLoading(false);
+      return;
+    }
 
     const formData = new FormData();
     Object.entries(values).forEach(([key, val]) => {
@@ -343,7 +374,7 @@ export function RegistrationForm() {
                           error={!!errors.password}
                           type={showPassword ? "text" : "password"}
                           {...register("password")}
-                          placeholder="••••••••"
+                          placeholder={`Minimum ${minPasswordLength} characters`}
                           className="pl-9 pr-9 h-10 rounded-lg text-xs"
                           disabled={isLoading}
                           autoFocus
@@ -373,7 +404,7 @@ export function RegistrationForm() {
                           </div>
                           <div className="flex items-center gap-1.5 text-[10px] text-text-secondary">
                             <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.numbers ? "bg-emerald-500" : "bg-text-muted")} />
-                            <span>numbers</span>
+                            <span>numbers {requireNumbers && <span className="text-danger">*</span>}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-[10px] text-text-secondary">
                             <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.uppercase ? "bg-emerald-500" : "bg-text-muted")} />
@@ -381,8 +412,14 @@ export function RegistrationForm() {
                           </div>
                           <div className="flex items-center gap-1.5 text-[10px] text-text-secondary">
                             <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.length ? "bg-emerald-500" : "bg-text-muted")} />
-                            <span>6+ characters</span>
+                            <span>{minPasswordLength}+ characters</span>
                           </div>
+                          {requireSymbols && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-text-secondary col-span-2">
+                              <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.special ? "bg-emerald-500" : "bg-text-muted")} />
+                              <span>special character (e.g. !@#$) <span className="text-danger">*</span></span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

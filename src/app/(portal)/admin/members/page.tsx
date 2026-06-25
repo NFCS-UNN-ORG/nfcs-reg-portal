@@ -396,6 +396,11 @@ export default async function AdminMembersPage({ searchParams }: PageProps) {
                         <div className="flex flex-wrap gap-1.5">
                           <Badge variant={getStatusBadgeVariant(member.status)}>{member.status}</Badge>
                           <Badge variant={getRoleBadgeVariant(member.role)}>{member.role}</Badge>
+                          {member.role === "exco" && member.position && (
+                            <span className="text-[10px] font-semibold text-brand-accent bg-brand-light px-2 py-0.5 rounded-full border border-brand-border">
+                              {member.position}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
 

@@ -10,9 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { claimLegacyAccount } from "@/lib/actions/migration.actions";
 import { createClient } from "@/lib/supabase/client";
-import { AlertCircle, CheckCircle2, ShieldCheck, ChevronLeft } from "lucide-react";
+import { AlertCircle, CheckCircle2, ShieldCheck, ChevronLeft, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import Link from "next/link";
+import { cn } from "@/lib/utils/cn";
 
 function ClaimAccountContent() {
   const searchParams = useSearchParams();
@@ -28,10 +29,26 @@ function ClaimAccountContent() {
   const [success, setSuccess] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [minPasswordLength, setMinPasswordLength] = React.useState(6);
+  const [requireNumbers, setRequireNumbers] = React.useState(false);
+  const [requireSymbols, setRequireSymbols] = React.useState(false);
+
+  React.useEffect(() => {
+    const savedLength = localStorage.getItem("settings_sec_min_length");
+    const savedNum = localStorage.getItem("settings_sec_req_num");
+    const savedSym = localStorage.getItem("settings_sec_req_sym");
+
+    if (savedLength) setMinPasswordLength(parseInt(savedLength, 10));
+    if (savedNum !== null) setRequireNumbers(savedNum === "true");
+    if (savedSym !== null) setRequireSymbols(savedSym === "true");
+  }, []);
+
   const {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -40,6 +57,17 @@ function ClaimAccountContent() {
       password: "",
     },
   });
+
+  const watchedValues = watch();
+  const passwordVal = watchedValues.password || "";
+
+  const passwordRules = {
+    lowercase: /[a-z]/.test(passwordVal),
+    uppercase: /[A-Z]/.test(passwordVal),
+    numbers: /[0-9]/.test(passwordVal),
+    special: /[^a-zA-Z0-9]/.test(passwordVal),
+    length: passwordVal.length >= minPasswordLength,
+  };
 
   // Verify token on mount
   React.useEffect(() => {
@@ -85,6 +113,22 @@ function ClaimAccountContent() {
     if (!token) return;
     setIsSubmitting(true);
     setError(null);
+
+    if (values.password.length < minPasswordLength) {
+      setError(`Password must be at least ${minPasswordLength} characters.`);
+      setIsSubmitting(false);
+      return;
+    }
+    if (requireNumbers && !/[0-9]/.test(values.password)) {
+      setError("Password must contain at least one numeric digit.");
+      setIsSubmitting(false);
+      return;
+    }
+    if (requireSymbols && !/[^a-zA-Z0-9]/.test(values.password)) {
+      setError("Password must contain at least one special character.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const response = await claimLegacyAccount(token, values.email, values.password);
@@ -216,20 +260,59 @@ function ClaimAccountContent() {
                     <label htmlFor="password" className="text-xs font-semibold text-text-secondary">
                       Set New Password
                     </label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="Minimum 6 characters"
-                      error={!!errors.password}
-                      disabled={isSubmitting}
-                      {...register("password")}
-                    />
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder={`Minimum ${minPasswordLength} characters`}
+                        error={!!errors.password}
+                        disabled={isSubmitting}
+                        className="pr-10"
+                        {...register("password")}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                     {errors.password && (
                       <p className="text-[11px] text-danger flex items-center gap-1 mt-1 font-medium">
                         <AlertCircle className="h-3 w-3" />
                         {errors.password.message}
                       </p>
                     )}
+
+                    {/* Dynamic complexity checklist card */}
+                    <div className="mt-2.5 p-3 bg-surface-subtle rounded-lg border border-border space-y-1.5 text-left">
+                      <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">Password must contain:</p>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                        <div className="flex items-center gap-1.5 text-[10px] text-text-secondary">
+                          <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.lowercase ? "bg-emerald-500" : "bg-text-muted")} />
+                          <span>lower-case</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-text-secondary">
+                          <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.numbers ? "bg-emerald-500" : "bg-text-muted")} />
+                          <span>numbers {requireNumbers && <span className="text-danger">*</span>}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-text-secondary">
+                          <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.uppercase ? "bg-emerald-500" : "bg-text-muted")} />
+                          <span>upper-case</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-text-secondary">
+                          <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.length ? "bg-emerald-500" : "bg-text-muted")} />
+                          <span>{minPasswordLength}+ characters</span>
+                        </div>
+                        {requireSymbols && (
+                          <div className="flex items-center gap-1.5 text-[10px] text-text-secondary col-span-2">
+                            <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", passwordRules.special ? "bg-emerald-500" : "bg-text-muted")} />
+                            <span>special character (e.g. !@#$) <span className="text-danger">*</span></span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <Button type="submit" variant="primary" className="w-full mt-2" isLoading={isSubmitting}>

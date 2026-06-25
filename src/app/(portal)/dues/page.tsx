@@ -197,6 +197,10 @@ export default async function MyDuesPage() {
     .eq("id", user.id)
     .single();
 
+  if (profile?.role === "super_admin") {
+    redirect("/dashboard");
+  }
+
   // Fetch payments
   const { data: payments } = await supabase
     .from("payments")
