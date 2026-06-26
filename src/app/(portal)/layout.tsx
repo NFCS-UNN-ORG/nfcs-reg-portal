@@ -6,6 +6,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { ProfileGateModal } from "@/components/layout/ProfileGateModal";
 import { ThemeProvider } from "@/lib/utils/theme";
+import { BottomNav } from "@/components/layout/BottomNav";
 
 export default function PortalLayout({
   children,
@@ -23,6 +24,8 @@ export default function PortalLayout({
         {/* Desktop Sidebar */}
         <Sidebar />
 
+        {/* Bottom Nav */}
+        <BottomNav />
         {/* Mobile Sidebar Navigation Drawer */}
         <MobileNav
           isOpen={mobileMenuOpen}

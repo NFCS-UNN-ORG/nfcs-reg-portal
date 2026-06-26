@@ -39,13 +39,13 @@ export function DismissibleGreeting({ name }: DismissibleGreetingProps) {
         <X className="h-4 w-4 text-white" />
       </button>
       <div className="z-10 flex flex-col gap-1">
-        <span className="text-[11px] font-semibold tracking-widest uppercase opacity-75">
+        <span className="text-[11px] font-semibold tracking-[0.25rem] uppercase opacity-75">
           Overview
         </span>
         <h2 className="text-xl md:text-2xl font-bold tracking-tight">
           Peace be with you, {name.split(" ")[0]}!
         </h2>
-        <p className="text-xs md:text-sm text-brand-light opacity-90 max-w-md">
+        <p className="text-xs md:text-sm text-text-onAccent opacity-90 max-w-md">
           Welcome to the NFCS UNN Portal. Access your dues history, check calendar events, and view announcements.
         </p>
       </div>

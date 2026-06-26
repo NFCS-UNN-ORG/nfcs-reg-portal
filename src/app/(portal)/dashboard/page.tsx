@@ -313,7 +313,7 @@ export default async function DashboardPage() {
               <CardTitle>Quick Access</CardTitle>
               <CardDescription>Shortcut links to key modules</CardDescription>
             </CardHeader>
-            <CardContent className="p-6 pt-0">
+            <CardContent className="p-6 pt-2">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 {isExcoOrAbove ? (
                   <>

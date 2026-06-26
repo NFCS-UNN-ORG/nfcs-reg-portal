@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils/cn";
 
 const badgeVariants = cva(
-  "inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold border select-none transition-colors",
+  "inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold border select-none transition-colors",
   {
     variants: {
       variant: {
@@ -28,7 +28,7 @@ const badgeVariants = cva(
 
 export interface BadgeProps
   extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof badgeVariants> {}
+  VariantProps<typeof badgeVariants> { }
 
 function Badge({ className, variant, ...props }: BadgeProps) {
   return (

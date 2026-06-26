@@ -7,7 +7,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-[850px] flex flex-col gap-6 relative z-10 animate-in fade-in duration-300 items-center">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center gap-2 select-none">
-          <div className="h-12 w-12 rounded-[12px] overflow-hidden">
+          <div className="size-24 rounded-[12px] overflow-hidden">
             <img src="/nfcs-unn-logo.png" alt="NFCS UNN Logo" className="h-full w-full object-cover" />
           </div>
           <div className="flex flex-col">

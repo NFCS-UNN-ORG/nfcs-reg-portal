@@ -12,27 +12,27 @@ import { useToast } from "@/components/ui/toast";
 import { Select } from "@/components/ui/select";
 import { ORGANS } from "@/lib/validations/member.schema";
 import { UNN_CAMPUS_DATA, UNN_HOSTELS, NFCS_SOCIETIES } from "@/lib/utils/unn-data";
-import { 
-  User, 
-  Mail, 
-  Phone, 
-  Calendar, 
-  MapPin, 
-  Church, 
-  Music, 
-  Award, 
-  School, 
-  GraduationCap, 
-  Upload, 
-  ShieldCheck, 
-  Check, 
-  Loader2 
+import {
+  User,
+  Mail,
+  Phone,
+  Calendar,
+  MapPin,
+  Church,
+  Music,
+  Award,
+  School,
+  GraduationCap,
+  Upload,
+  ShieldCheck,
+  Check,
+  Loader2
 } from "lucide-react";
 
 export default function ProfilePage() {
   const { toast } = useToast();
   const { profile, isLoading: isUserLoading, refetch } = useUser();
-  
+
   const [isLoading, setIsLoading] = React.useState(false);
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
@@ -53,7 +53,7 @@ export default function ProfilePage() {
     if (profile) {
       setSelectedFaculty(profile.faculty || "");
       setSelectedDepartment(profile.department || "");
-      
+
       const addr = profile.address || "";
       if (addr) {
         // Find matching hostel case-insensitively, ignoring "Off Campus" option itself
@@ -220,25 +220,25 @@ export default function ProfilePage() {
             <CardContent className="p-6 flex flex-col items-center gap-4">
               {/* Photo Upload area */}
               <div className="relative group">
-                <Avatar 
-                  src={photoPreview} 
-                  name={profile.full_name} 
-                  size="xl" 
+                <Avatar
+                  src={photoPreview}
+                  name={profile.full_name}
+                  size="xl"
                   className="h-28 w-28 border-4 border-neutrals-borderLight shadow-sm"
                 />
-                <label 
-                  htmlFor="passport_photo" 
+                <label
+                  htmlFor="passport_photo"
                   className="absolute bottom-0 right-0 h-8 w-8 bg-brand hover:bg-brand-accent text-white rounded-full flex items-center justify-center border-2 border-white shadow-md cursor-pointer transition-all hover:scale-105"
                 >
                   <Upload className="h-4 w-4" />
                 </label>
-                <input 
-                  type="file" 
-                  id="passport_photo" 
-                  name="passport_photo" 
-                  accept="image/*" 
-                  onChange={handlePhotoChange} 
-                  className="hidden" 
+                <input
+                  type="file"
+                  id="passport_photo"
+                  name="passport_photo"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  className="hidden"
                   disabled={isLoading}
                 />
               </div>
@@ -335,7 +335,7 @@ export default function ProfilePage() {
                     <label className="text-xs font-semibold text-text-secondary">Full Name</label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
-                      <Input 
+                      <Input
                         name="full_name"
                         required
                         defaultValue={profile.full_name || ""}
@@ -350,7 +350,7 @@ export default function ProfilePage() {
                     <label className="text-xs font-semibold text-text-secondary">Phone Number</label>
                     <div className="relative">
                       <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
-                      <Input 
+                      <Input
                         name="phone"
                         defaultValue={profile.phone || ""}
                         disabled={isLoading}
@@ -366,7 +366,7 @@ export default function ProfilePage() {
                     <label className="text-xs font-semibold text-text-secondary">Date of Birth</label>
                     <div className="relative">
                       <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
-                      <Input 
+                      <Input
                         type="date"
                         name="date_of_birth"
                         defaultValue={profile.date_of_birth || ""}
@@ -379,7 +379,7 @@ export default function ProfilePage() {
                   {/* Residential Address Option Selector */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-text-secondary">Hostel / Residential Option</label>
-                    <Select 
+                    <Select
                       name="address_option"
                       value={selectedHostel}
                       onChange={(e) => {
@@ -404,7 +404,7 @@ export default function ProfilePage() {
                         <label className="text-xs font-semibold text-text-secondary">Off-Campus Address</label>
                         <div className="relative">
                           <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
-                          <Input 
+                          <Input
                             name="address_custom"
                             placeholder="e.g. 30 Odim Street, Nsukka"
                             defaultValue={customAddress}
@@ -423,7 +423,7 @@ export default function ProfilePage() {
                   {/* Catholic Society */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-text-secondary">Catholic Society / Devotional Group</label>
-                    <Select 
+                    <Select
                       name="society"
                       defaultValue={profile.society || ""}
                       disabled={isLoading}
@@ -444,7 +444,7 @@ export default function ProfilePage() {
                     <label className="text-xs font-semibold text-text-secondary">Home Parish / Base Church</label>
                     <div className="relative">
                       <Church className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
-                      <Input 
+                      <Input
                         name="parish"
                         placeholder="St. Peter's Chaplaincy, UNN"
                         defaultValue={profile.parish || ""}
@@ -466,7 +466,7 @@ export default function ProfilePage() {
                       <span>Faculty</span>
                       {isFacultyDisabled && <span className="text-[10px] text-amber-600 font-normal">Locked (Contact Admin to change)</span>}
                     </label>
-                    <Select 
+                    <Select
                       name="faculty"
                       value={selectedFaculty}
                       onChange={(e) => {
@@ -490,7 +490,7 @@ export default function ProfilePage() {
                       <span>Department</span>
                       {isDepartmentDisabled && <span className="text-[10px] text-amber-600 font-normal">Locked</span>}
                     </label>
-                    <Select 
+                    <Select
                       name="department"
                       value={selectedDepartment}
                       onChange={(e) => setSelectedDepartment(e.target.value)}
@@ -514,7 +514,7 @@ export default function ProfilePage() {
                       <span>Academic Level</span>
                       {isAcademicLevelDisabled && <span className="text-[10px] text-amber-600 font-normal">Locked</span>}
                     </label>
-                    <Select 
+                    <Select
                       name="academic_level"
                       defaultValue={profile.academic_level || ""}
                       disabled={isLoading || isAcademicLevelDisabled}
@@ -534,7 +534,7 @@ export default function ProfilePage() {
                   {/* Scope Organ */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-text-secondary">Scope Organ</label>
-                    <Select 
+                    <Select
                       name="organ"
                       defaultValue={profile.organ || ""}
                       disabled={isLoading}
@@ -551,17 +551,12 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="flex justify-end pt-4 border-t border-neutrals-borderLight">
-                  <Button 
-                    type="submit" 
-                    variant="primary" 
+                  <Button
+                    type="submit"
+                    variant="primary"
                     className="px-6 h-10 text-xs font-semibold gap-2 bg-brand hover:bg-brand-accent transition-colors"
                     isLoading={isLoading}
                   >
-                    {isLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Check className="h-4 w-4" />
-                    )}
                     Save Profile Changes
                   </Button>
                 </div>

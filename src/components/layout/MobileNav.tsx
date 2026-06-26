@@ -7,7 +7,7 @@ import { useUser } from "@/hooks/useUser";
 import { cn } from "@/lib/utils/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { logout } from "@/lib/actions/auth.actions";
-import { X, LogOut, ShieldCheck } from "lucide-react";
+import { X, LogOut, ShieldCheck, Laptop, Moon, Sun } from "lucide-react";
 import {
   LayoutDashboard,
   User,
@@ -19,6 +19,9 @@ import {
   FolderSync,
   ClipboardList
 } from "lucide-react";
+import { SelectTrigger, SelectValue, SelectPopup, SelectItem, SelectPrimitive } from "@/components/ui/select";
+import { useTheme } from "@/lib/utils/theme";
+
 
 interface MobileNavProps {
   isOpen: boolean;
@@ -29,6 +32,8 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { profile } = useUser();
+  const { theme, setTheme } = useTheme();
+
 
   if (!isOpen) return null;
 
@@ -164,6 +169,44 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
 
         {/* User profile footer */}
         <div className="mt-auto border-t border-neutrals-borderLight pt-4 space-y-3">
+          {/* Theme */}
+          <SelectPrimitive.Root
+            value={theme}
+            onValueChange={(val) => setTheme(val as any)}
+          >
+            <SelectTrigger
+              className="md:hidden h-9 w-full rounded-lg border-none bg-transparent px-3 text-xs hover:bg-surface-page focus:ring-0 focus:shadow-none gap-1 font-medium capitalize"
+              size="sm"
+            >
+              <span className="flex items-center gap-3">
+                {theme === "light" && <Sun className="h-4 w-4 text-amber-honey" />}
+                {theme === "dark" && <Moon className="h-4 w-4 text-text-onAccent" />}
+                {theme === "system" && <Laptop className="h-4 w-4" />}
+                <SelectValue />
+              </span>
+            </SelectTrigger>
+            <SelectPopup align="end" className="w-[125px]">
+              <SelectItem value="light">
+                <span className="flex items-center gap-1.5">
+                  <Sun className="h-3.5 w-3.5 text-amber-honey" />
+                  <span>Light</span>
+                </span>
+              </SelectItem>
+              <SelectItem value="dark">
+                <span className="flex items-center gap-1.5">
+                  <Moon className="h-3.5 w-3.5" />
+                  <span>Dark</span>
+                </span>
+              </SelectItem>
+              <SelectItem value="system">
+                <span className="flex items-center gap-1.5">
+                  <Laptop className="h-3.5 w-3.5" />
+                  <span>System</span>
+                </span>
+              </SelectItem>
+            </SelectPopup>
+          </SelectPrimitive.Root>
+
           {profile && (
             <div className="flex items-center gap-2.5 px-2 py-1">
               <Avatar

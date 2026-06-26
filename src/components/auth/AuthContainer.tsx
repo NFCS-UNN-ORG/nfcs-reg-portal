@@ -37,18 +37,18 @@ export function AuthContainer({ initialTab = "login" }: AuthContainerProps) {
   return (
     <div className="w-full flex flex-col gap-6 items-center">
       {/* Tab Switcher */}
-      <div className="flex bg-surface-subtle p-1 rounded-xl border border-border select-none relative z-10 w-full max-w-[280px] justify-between">
+      <div className="flex bg-surface-subtle p-1 rounded-xl border-thick border-brand select-none relative z-10 w-full max-w-[280px] justify-between">
         <button
           onClick={() => handleTabChange("login")}
           className={cn(
-            "flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all relative outline-none",
+            "flex-1 py-2 text-xs font-semibold rounded-lg transition-all relative outline-none",
             activeTab === "login" ? "text-text-primary" : "text-text-secondary hover:text-text-primary"
           )}
         >
           {activeTab === "login" && (
             <motion.div
               layoutId="activeTabIndicator"
-              className="absolute inset-0 bg-surface shadow-pill-tab-active border border-neutrals-borderLight rounded-lg z-0"
+              className="absolute inset-0 bg-brand shadow-pill-tab-active border border-neutrals-borderLight rounded-lg z-0"
               transition={{ type: "spring", stiffness: 380, damping: 30 }}
             />
           )}
@@ -64,7 +64,7 @@ export function AuthContainer({ initialTab = "login" }: AuthContainerProps) {
           {activeTab === "register" && (
             <motion.div
               layoutId="activeTabIndicator"
-              className="absolute inset-0 bg-surface shadow-pill-tab-active border border-neutrals-borderLight rounded-lg z-0"
+              className="absolute inset-0 bg-brand shadow-pill-tab-active border border-neutrals-borderLight rounded-lg z-0"
               transition={{ type: "spring", stiffness: 380, damping: 30 }}
             />
           )}

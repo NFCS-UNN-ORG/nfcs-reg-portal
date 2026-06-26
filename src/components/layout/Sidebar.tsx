@@ -175,6 +175,8 @@ export function Sidebar() {
 
       {/* User Section / Bottom Navigation */}
       <div className="mt-auto border-t border-neutrals-borderLight pt-4 space-y-3">
+        {/* Theme */}
+
         {/* User Card */}
         {profile && (
           <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg select-none">

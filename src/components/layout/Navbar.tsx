@@ -113,14 +113,14 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
           onValueChange={(val) => setTheme(val as any)}
         >
           <SelectTrigger
-            className="h-9 w-[110px] rounded-lg border-none bg-transparent px-2 text-xs hover:bg-surface-page focus:ring-0 focus:shadow-none gap-1 text-text-secondary capitalize"
+            className="hidden md:flex h-9 w-4 rounded-lg border-none bg-transparent px-2 text-xs hover:bg-surface-page focus:ring-0 focus:shadow-none gap-1 text-text-secondary capitalize"
             size="sm"
           >
             <span className="flex items-center gap-1.5">
               {theme === "light" && <Sun className="h-4 w-4 text-amber-honey" />}
               {theme === "dark" && <Moon className="h-4 w-4" />}
               {theme === "system" && <Laptop className="h-4 w-4" />}
-              <SelectValue />
+              <SelectValue className="hidden md:block" />
             </span>
           </SelectTrigger>
           <SelectPopup align="end" className="w-[125px]">
@@ -179,7 +179,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
                 />
                 <div className="absolute right-0 mt-1.5 w-48 origin-top-right rounded-[10px] border border-neutrals-border bg-surface p-1.5 shadow-dropdown z-20 animate-in fade-in-50 slide-in-from-top-1 duration-100">
                   <div className="px-2.5 py-1.5 text-xs border-b border-neutrals-borderLight">
-                    <p className="font-semibold text-text-primary truncate">
+                    <p className="font-semibold text-text-primary text-base truncate">
                       {profile.full_name}
                     </p>
                     <p className="text-[10px] text-text-tertiary truncate">
@@ -190,13 +190,13 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
                   <Link
                     href="/profile"
                     onClick={() => setDropdownOpen(false)}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] text-text-secondary hover:bg-surface-page hover:text-text-primary transition-colors"
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs md:text-[13px] text-text-secondary hover:bg-surface-page hover:text-text-primary transition-colors"
                   >
                     <UserIcon className="h-4 w-4 text-text-tertiary" />
                     <span>My Profile</span>
                   </Link>
 
-                  {["exco", "super_admin"].includes(profile.role) && (
+                  {["super_admin"].includes(profile.role) && (
                     <Link
                       href="/admin/settings"
                       onClick={() => setDropdownOpen(false)}
@@ -206,6 +206,43 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
                       <span>Admin Settings</span>
                     </Link>
                   )}
+
+                  <SelectPrimitive.Root
+                    value={theme}
+                    onValueChange={(val) => setTheme(val as any)}
+                  >
+                    <SelectTrigger
+                      className="md:hidden h-9 w-full rounded-lg border-none bg-transparent px-2 text-xs hover:bg-surface-page focus:ring-0 focus:shadow-none gap-1 text-text-secondary capitalize"
+                      size="sm"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {theme === "light" && <Sun className="h-4 w-4 text-amber-honey" />}
+                        {theme === "dark" && <Moon className="h-4 w-4" />}
+                        {theme === "system" && <Laptop className="h-4 w-4" />}
+                        <SelectValue />
+                      </span>
+                    </SelectTrigger>
+                    <SelectPopup align="end" className="w-[125px]">
+                      <SelectItem value="light">
+                        <span className="flex items-center gap-1.5">
+                          <Sun className="h-3.5 w-3.5 text-amber-honey" />
+                          <span>Light</span>
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="dark">
+                        <span className="flex items-center gap-1.5">
+                          <Moon className="h-3.5 w-3.5" />
+                          <span>Dark</span>
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="system">
+                        <span className="flex items-center gap-1.5">
+                          <Laptop className="h-3.5 w-3.5" />
+                          <span>System</span>
+                        </span>
+                      </SelectItem>
+                    </SelectPopup>
+                  </SelectPrimitive.Root>
 
                   <div className="my-1 border-t border-neutrals-borderLight" />
 

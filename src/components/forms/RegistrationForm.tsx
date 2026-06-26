@@ -183,8 +183,8 @@ export function RegistrationForm() {
   return (
     <div className="flex flex-col md:flex-row bg-surface">
       {/* Sidebar Timeline (Desktop only) */}
-      <div className="hidden md:flex md:w-[260px] bg-surface-subtle p-8 border-r border-border flex-col justify-between select-none">
-        <div className="space-y-6">
+      <div className="hidden md:flex md:w-[260px] bg-surface-subtle p-8 border-r border-brand flex-col justify-between select-none">
+        <div className="space-y-6 mb-2">
           <div className="space-y-1">
             <h4 className="text-xs font-bold uppercase tracking-wider text-text-tertiary">Registration</h4>
             <p className="text-[10px] text-text-tertiary">Complete the steps below to join the portal</p>
@@ -267,7 +267,7 @@ export function RegistrationForm() {
           </div>
         </div>
 
-        <form onSubmit={onFormSubmit} className="space-y-5 flex-1 flex flex-col justify-between">
+        <form onSubmit={onFormSubmit} className="space-y-5 flex-1 flex flex-col justify-end">
           <div className="space-y-5">
             {error && (
               <div className="flex items-center gap-2.5 rounded-xl bg-status-errorBackground p-3.5 text-xs font-medium text-status-errorText border border-status-errorBorder animate-in fade-in duration-200">
@@ -276,7 +276,7 @@ export function RegistrationForm() {
               </div>
             )}
 
-            <div className="min-h-[160px] flex flex-col justify-end">
+            <div className="min-h-[160px] flex flex-col justify-self-end">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={currentStep}
