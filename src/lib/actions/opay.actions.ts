@@ -117,7 +117,7 @@ export async function initiateOPayPayment(values: {
   // Fetch student's profile info for OPay request
   const { data: profile } = await adminClient
     .from("profiles")
-    .select("full_name, email, phone, academic_level, faculty, role")
+    .select("full_name, email, phone, academic_level, faculty, role, department")
     .eq("id", user.id)
     .single();
 
@@ -128,7 +128,7 @@ export async function initiateOPayPayment(values: {
 
   if (profile && !isAlumnus(profile.role) && isRequiredDuesType(values.dues_type)) {
     const levelOrdinal = getLevelOrdinal(profile.academic_level);
-    const totalCourseYears = getYearsOfStudy(profile.faculty);
+    const totalCourseYears = getYearsOfStudy(profile.faculty, profile.department);
 
     const { data: allPayments } = await adminClient
       .from("payments")

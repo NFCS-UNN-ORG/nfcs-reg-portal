@@ -154,7 +154,7 @@ export default async function DashboardPage() {
 
   // Build the payment tracker to compute totals
   const levelOrdinal = getLevelOrdinal(profile.academic_level);
-  const totalCourseYears = getYearsOfStudy(profile.faculty);
+  const totalCourseYears = getYearsOfStudy(profile.faculty, profile.department);
   const tracker = (!isExcoOrAbove && levelOrdinal > 0)
     ? buildPaymentTracker({
       currentLevelOrdinal: levelOrdinal,

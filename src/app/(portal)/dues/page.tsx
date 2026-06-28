@@ -236,7 +236,7 @@ export default async function MyDuesPage() {
 
   const userIsAlumnus = isAlumnus(profile?.role);
   const levelOrdinal = getLevelOrdinal(profile?.academic_level);
-  const totalCourseYears = getYearsOfStudy(profile?.faculty);
+  const totalCourseYears = getYearsOfStudy(profile?.faculty, profile?.department);
 
   // Build payment tracker (students/excos only)
   const tracker = !userIsAlumnus

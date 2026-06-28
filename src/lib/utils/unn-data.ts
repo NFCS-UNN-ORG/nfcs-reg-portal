@@ -4,66 +4,83 @@ export const UNN_CAMPUS_DATA: Record<string, string[]> = {
     "Agricultural Extension",
     "Animal Science",
     "Crop Science",
-    "Food Science & Technology",
+    "Food Science and Technology",
+    "Home Science and Management",
+    "Nutrition and Dietetics",
     "Soil Science",
-    "Home Science",
   ],
   "Faculty of Arts": [
-    "Archeology & Tourism",
-    "English & Literary Studies",
-    "Fine & Applied Arts",
-    "Foreign Languages & Literary Studies",
-    "History & International Studies",
-    "Linguistics, Igbo & Other Nigerian Languages",
+    "Archeology and Tourism",
+    "Combined Arts",
+    "English and Literary Studies",
+    "Fine and Applied Arts",
+    "Foreign Language and Literatures",
+    "History and International Studies",
+    "Linguistics",
     "Mass Communication",
     "Music",
-    "Theatre & Film Studies",
+    "Theatre and Film Studies",
   ],
   "Faculty of Biological Sciences": [
     "Biochemistry",
+    "Combined Biological Sciences",
     "Microbiology",
-    "Plant Science & Biotechnology",
-    "Zoology & Environmental Biology",
-    "Molecular Genetics & Biotechnology",
+    "Genetics and Biotechnology",
+    "Plant Science and Botany",
+    "Zoology and Environmental Biology",
   ],
   "Faculty of Education": [
-    "Adult Education & Extra-Mural Studies",
+    "Adult Education and Extra-Mural Studies",
     "Arts Education",
-    "Computer & Robotic Education",
     "Educational Foundations",
-    "Human Kinetics & Health Education",
-    "Library & Information Science",
+    "Human Kinetics and Health Education",
+    "Library and Information Science",
     "Science Education",
     "Social Science Education",
   ],
   "Faculty of Engineering": [
-    "Agricultural & Bioresources Engineering",
+    "Agricultural and Bioresources Engineering",
+    "Biomedical Engineering",
     "Civil Engineering",
     "Electrical Engineering",
-    "Electronic and Computer Engineering",
+    "Electronics and Computer Engineering",
     "Mechanical Engineering",
-    "Metallurgical & Materials Engineering",
+    "Mechatronics Engineering",
+    "Metallurgical and Materials Engineering",
   ],
   "Faculty of Pharmaceutical Sciences": ["Pharmacy"],
   "Faculty of Physical Sciences": [
     "Computer Science",
+    "Combined Physical Sciences",
     "Geology",
     "Mathematics",
-    "Physics & Astronomy",
-    "Pure & Industrial Chemistry",
+    "Physics and Astronomy",
+    "Pure and Industrial Chemistry",
+    "Science Lab technology",
     "Statistics",
   ],
   "Faculty of Social Sciences": [
+    "Combined social Sciences",
+    "Criminology and Security Studies",
     "Economics",
     "Geography",
     "Philosophy",
-    "Political Science",
+    "Political Science and Diplomacy",
     "Psychology",
-    "Public Administration & Local Government",
-    "Religion & Cultural Studies",
-    "Sociology & Anthropology",
+    "Public Administration and Local government",
+    "Religion and Cultural Studies",
+    "Social Works",
+    "Sociology and Anthropology",
   ],
   "Faculty of Veterinary Medicine": ["Veterinary Medicine"],
+  "Faculty of Vocational and Technical Education": [
+    "Agricultural Education",
+    "Business Education",
+    "Computer and Robotics Education",
+    "Entrepreneurship and Vocational Education",
+    "Home Economics and Hospitality Management Education",
+    "Industrial Technical Education",
+  ],
 };
 
 /**
@@ -76,16 +93,51 @@ export const UNN_COURSE_YEARS: Record<string, number> = {
   "Faculty of Biological Sciences": 4,
   "Faculty of Education": 4,
   "Faculty of Engineering": 5,
-  "Faculty of Pharmaceutical Sciences": 5,
+  "Faculty of Pharmaceutical Sciences": 6,
   "Faculty of Physical Sciences": 4,
   "Faculty of Social Sciences": 4,
   "Faculty of Veterinary Medicine": 6,
+  "Faculty of Vocational and Technical Education": 4,
 };
 
-/** Get the number of years of study for a given faculty. Defaults to 4. */
-export function getYearsOfStudy(faculty: string | null | undefined): number {
+// Department-level overrides (if any department has a different duration than its faculty default)
+export const UNN_DEPT_COURSE_YEARS: Record<string, number> = {
+  // Faculty of Agriculture (Default is 5)
+  "Home Science and Management": 4,
+  "Nutrition and Dietetics": 4,
+
+  // Faculty of Physical Sciences (Default is 4)
+  "Geology": 5,
+  "Science Lab technology": 5,
+};
+
+/** Get the number of years of study for a given faculty and department. Defaults to 4. */
+export function getYearsOfStudy(
+  faculty: string | null | undefined,
+  department?: string | null | undefined
+): number {
   if (!faculty) return 4;
-  return UNN_COURSE_YEARS[faculty] ?? 4;
+
+  const facultyTrimmed = faculty.trim();
+
+  // If department is provided, check for overrides first
+  if (department) {
+    const deptTrimmed = department.trim();
+    for (const key of Object.keys(UNN_DEPT_COURSE_YEARS)) {
+      if (key.toLowerCase() === deptTrimmed.toLowerCase()) {
+        return UNN_DEPT_COURSE_YEARS[key];
+      }
+    }
+  }
+
+  // Look up by faculty
+  for (const key of Object.keys(UNN_COURSE_YEARS)) {
+    if (key.toLowerCase() === facultyTrimmed.toLowerCase()) {
+      return UNN_COURSE_YEARS[key];
+    }
+  }
+
+  return 4;
 }
 
 /** Check if a user role qualifies as alumnus (no annual session dues) */
@@ -131,6 +183,7 @@ export const UNN_HOSTELS = [
 export function getDuesAmount(
   academicLevel: string,
   faculty?: string | null,
+  department?: string | null,
 ): number {
   switch (academicLevel) {
     case "100 Level":
@@ -140,19 +193,9 @@ export function getDuesAmount(
     case "300 Level":
       return 400;
     case "400 Level":
-      // Note: if course year is above four years (e.g. Engineering, Veterinary Medicine, Pharmacy, Agriculture), total due is ₦400 not ₦500
-      const facultyNormalized = (faculty || "").toLowerCase();
-      const isAboveFourYearsCourse = [
-        "engineering",
-        "pharmaceutical sciences",
-        "veterinary medicine",
-        "agriculture",
-        "faculty of engineering",
-        "faculty of pharmaceutical sciences",
-        "faculty of veterinary medicine",
-        "faculty of agriculture",
-      ].some((val) => facultyNormalized.includes(val));
-      return isAboveFourYearsCourse ? 400 : 500;
+      // Note: if course year is above four years (e.g. Engineering, Veterinary Medicine, Pharmacy, Agriculture, Geology, Science Lab tech), total due is ₦400 not ₦500
+      const totalCourseYears = getYearsOfStudy(faculty, department);
+      return totalCourseYears > 4 ? 400 : 500;
     case "500 Level":
       return 400;
     case "Graduate":
