@@ -45,7 +45,7 @@ export async function createEvent(values: EventFormValues, excoId: string) {
       try {
         const { data: profiles } = await adminClient
           .from("profiles")
-          .select("email, full_name")
+          .select("id, email, full_name")
           .eq("status", "active");
 
         if (profiles && profiles.length > 0) {
@@ -65,9 +65,19 @@ export async function createEvent(values: EventFormValues, excoId: string) {
               });
             }
           }
+
+          // Insert in-app notifications in bulk
+          const notifications = profiles.map((p) => ({
+            profile_id: p.id,
+            title: "New Event Invitation 📅",
+            body: `You've been invited to: ${values.title}. Location: ${values.location || "N/A"}. Starts at: ${new Date(values.starts_at).toLocaleString()}`,
+            type: "general",
+            is_read: false,
+          }));
+          await adminClient.from("notifications").insert(notifications);
         }
       } catch (emailErr) {
-        console.error("Failed to send event invitations:", emailErr);
+        console.error("Failed to send event invitations / notifications:", emailErr);
       }
     }
 
@@ -105,7 +115,7 @@ export async function publishEvent(eventId: string, excoId: string) {
     try {
       const { data: profiles } = await adminClient
         .from("profiles")
-        .select("email, full_name")
+        .select("id, email, full_name")
         .eq("status", "active");
 
       if (profiles && profiles.length > 0) {
@@ -125,9 +135,19 @@ export async function publishEvent(eventId: string, excoId: string) {
             });
           }
         }
+
+        // Insert in-app notifications in bulk
+        const notifications = profiles.map((p) => ({
+          profile_id: p.id,
+          title: "New Event Invitation 📅",
+          body: `You've been invited to: ${event.title}. Location: ${event.location || "N/A"}. Starts at: ${new Date(event.starts_at).toLocaleString()}`,
+          type: "general",
+          is_read: false,
+        }));
+        await adminClient.from("notifications").insert(notifications);
       }
     } catch (emailErr) {
-      console.error("Failed to send event invitations:", emailErr);
+      console.error("Failed to send event invitations / notifications:", emailErr);
     }
 
     revalidatePath("/events");

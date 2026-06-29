@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -19,6 +19,7 @@ export type Database = {
           body: string
           created_at: string | null
           created_by: string | null
+          event_date: string | null
           id: string
           is_published: boolean | null
           organ: Database["public"]["Enums"]["organ_type"] | null
@@ -29,6 +30,7 @@ export type Database = {
           body: string
           created_at?: string | null
           created_by?: string | null
+          event_date?: string | null
           id?: string
           is_published?: boolean | null
           organ?: Database["public"]["Enums"]["organ_type"] | null
@@ -39,6 +41,7 @@ export type Database = {
           body?: string
           created_at?: string | null
           created_by?: string | null
+          event_date?: string | null
           id?: string
           is_published?: boolean | null
           organ?: Database["public"]["Enums"]["organ_type"] | null
@@ -169,6 +172,7 @@ export type Database = {
           organ: Database["public"]["Enums"]["organ_type"] | null
           parish: string | null
           phone: string | null
+          position: string | null
           role: Database["public"]["Enums"]["user_role"]
           society: string | null
           updated_at: string | null
@@ -195,6 +199,7 @@ export type Database = {
           organ?: Database["public"]["Enums"]["organ_type"] | null
           parish?: string | null
           phone?: string | null
+          position?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           society?: string | null
           updated_at?: string | null
@@ -221,6 +226,7 @@ export type Database = {
           organ?: Database["public"]["Enums"]["organ_type"] | null
           parish?: string | null
           phone?: string | null
+          position?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           society?: string | null
           updated_at?: string | null
@@ -229,6 +235,47 @@ export type Database = {
           {
             foreignKeyName: "legacy_members_claimed_by_profile_fkey"
             columns: ["claimed_by_profile"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          is_read: boolean
+          metadata: Json | null
+          profile_id: string
+          title: string
+          type: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          metadata?: Json | null
+          profile_id: string
+          title: string
+          type: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          metadata?: Json | null
+          profile_id?: string
+          title?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_profile_id_fkey"
+            columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -406,47 +453,6 @@ export type Database = {
           {
             foreignKeyName: "fk_profiles_approved_by"
             columns: ["approved_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      notifications: {
-        Row: {
-          id: string
-          profile_id: string
-          title: string
-          body: string
-          type: string
-          is_read: boolean
-          metadata: Json | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          profile_id: string
-          title: string
-          body: string
-          type: string
-          is_read?: boolean
-          metadata?: Json | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          profile_id?: string
-          title?: string
-          body?: string
-          type?: string
-          is_read?: boolean
-          metadata?: Json | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "notifications_profile_id_fkey"
-            columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]

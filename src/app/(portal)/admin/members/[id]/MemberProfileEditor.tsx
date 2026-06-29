@@ -283,7 +283,7 @@ export function MemberProfileEditor({ member, adminId }: { member: any; adminId:
               <span className="text-xs font-semibold text-text-secondary select-none">Organ:</span>
               <select
                 name="organ"
-                defaultValue={organ}
+                defaultValue={member.organ || ""}
                 className="h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-prussian-blue-2 px-2 py-1 text-xs text-text-primary focus:border-brand-accent focus:outline-none"
               >
                 <option value="all">All Organs</option>

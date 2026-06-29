@@ -24,7 +24,8 @@ import {
   DollarSign,
   CreditCard,
   ShieldCheck,
-  Bell
+  Bell,
+  RefreshCw
 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -38,6 +39,7 @@ import { DuesConfigEditor } from "./DuesConfigEditor";
 import { PaymentMethodsEditor } from "./PaymentMethodsEditor";
 import { SecuritySettingsEditor } from "./SecuritySettingsEditor";
 import { NotificationSettingsEditor } from "./NotificationSettingsEditor";
+import { SessionRolloverEditor } from "./SessionRolloverEditor";
 import { formatTimeAgo } from "@/lib/utils/date";
 
 function getStatusBadgeVariant(status: string) {
@@ -135,6 +137,7 @@ export default async function AdminSettingsPage({ searchParams }: PageProps) {
     { id: "payments", label: "Payment Methods", icon: CreditCard },
     { id: "security", label: "Security", icon: ShieldCheck },
     { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "rollover", label: "Session Rollover", icon: RefreshCw },
     { id: "audit", label: "Audit Logs", icon: History },
   ];
 
@@ -430,6 +433,10 @@ export default async function AdminSettingsPage({ searchParams }: PageProps) {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {activeTab === "rollover" && (
+        <SessionRolloverEditor currentExcoId={currentUser.id} />
       )}
     </div>
   );

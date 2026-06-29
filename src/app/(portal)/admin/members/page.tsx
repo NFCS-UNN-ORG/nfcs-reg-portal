@@ -1,23 +1,12 @@
 import * as React from "react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Avatar } from "@/components/ui/avatar";
-import {
-  TableWrapper,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell
-} from "@/components/ui/table";
-import { Plus, Search, ShieldCheck, Mail, Eye, AlertCircle, Users, UserCheck } from "lucide-react";
+import { Plus, AlertCircle, Users, UserCheck, Search } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
-import { formatTimeAgo } from "@/lib/utils/date";
 import { LegacyMemberTable } from "@/components/members/LegacyMemberTable";
+import { RegisteredMembersTable } from "@/components/members/RegisteredMembersTable";
 
 function getStatusBadgeVariant(status: string) {
   switch (status) {
@@ -319,104 +308,15 @@ export default async function AdminMembersPage({ searchParams }: PageProps) {
               </p>
             </div>
           ) : (
-            <TableWrapper>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <Link href={`/admin/members?tab=registered&status=${status}&organ=${organ}&sort=${sort === 'name' ? 'newest' : 'name'}&search=${search}`} className="flex items-center gap-1 hover:text-brand-accent transition-colors">
-                        Member Details {sort === 'name' && "↓"}
-                      </Link>
-                    </TableHead>
-                    <TableHead>Matric Number</TableHead>
-                    <TableHead>Department / Faculty</TableHead>
-                    <TableHead>Assigned Organ</TableHead>
-                    <TableHead>
-                      <Link href={`/admin/members?tab=registered&status=${status}&organ=${organ}&sort=${sort === 'newest' ? 'oldest' : 'newest'}&search=${search}`} className="flex items-center gap-1 hover:text-brand-accent transition-colors">
-                        Date Joined {sort === 'newest' ? "↓" : sort === 'oldest' ? "↑" : ""}
-                      </Link>
-                    </TableHead>
-                    <TableHead>Status & Role</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {members.map((member) => (
-                    <TableRow key={member.id}>
-                      {/* Name and avatar info */}
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar
-                            src={member.passport_photo_url}
-                            name={member.full_name}
-                            size="md"
-                            className="border border-neutrals-borderLight"
-                          />
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-sm font-semibold text-text-primary truncate flex items-center gap-1">
-                              {member.full_name}
-                              {member.status === "active" && (
-                                <ShieldCheck className="h-4 w-4 text-brand-accent shrink-0" />
-                              )}
-                            </span>
-                            <span className="text-xs text-text-tertiary truncate flex items-center gap-1 select-all">
-                              <Mail className="h-3 w-3 shrink-0" /> {member.email}
-                            </span>
-                          </div>
-                        </div>
-                      </TableCell>
-
-                      {/* Matric number monospace */}
-                      <TableCell variant="mono">
-                        {member.matric_number || "—"}
-                      </TableCell>
-
-                      {/* Department & Faculty */}
-                      <TableCell variant="secondary">
-                        <div className="flex flex-col">
-                          <span className="font-medium text-text-primary text-[13px]">{member.department || "—"}</span>
-                          <span className="text-text-tertiary text-xs">{member.faculty || "—"}</span>
-                        </div>
-                      </TableCell>
-
-                      {/* Assigned Organ */}
-                      <TableCell variant="secondary">
-                        <span className="capitalize">
-                          {member.organ ? member.organ.replace("_", " ") : "Not assigned"}
-                        </span>
-                      </TableCell>
-
-                      {/* Date Joined */}
-                      <TableCell variant="secondary">
-                        {formatTimeAgo(member.created_at)}
-                      </TableCell>
-
-                      {/* Status & Role Badges */}
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
-                          <Badge variant={getStatusBadgeVariant(member.status)}>{member.status}</Badge>
-                          <Badge variant={getRoleBadgeVariant(member.role)}>{member.role}</Badge>
-                          {member.role === "exco" && member.position && (
-                            <span className="text-[10px] font-semibold text-brand-accent bg-brand-light px-2 py-0.5 rounded-full border border-brand-border">
-                              {member.position}
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-
-                      {/* Actions column */}
-                      <TableCell className="text-right">
-                        <Button asChild variant="secondary" size="sm" className="h-8 px-2.5">
-                          <Link href={`/admin/members/${member.id}`} className="gap-1.5 text-xs font-semibold">
-                            <Eye className="h-3.5 w-3.5" /> View
-                          </Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableWrapper>
+            <RegisteredMembersTable
+              initialMembers={members}
+              currentExcoId={currentExcoId}
+              currentUserRole={currentUserRole}
+              sort={sort}
+              status={status}
+              organ={organ}
+              search={search}
+            />
           )}
         </>
       ) : (

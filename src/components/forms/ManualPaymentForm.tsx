@@ -13,6 +13,7 @@ import { AlertCircle, CheckCircle, Search, User, RefreshCw } from "lucide-react"
 import { useToast } from "@/components/ui/toast";
 import { useUser } from "@/hooks/useUser";
 import { formatAmountInput, formatNaira } from "@/lib/utils/money";
+import { getLevelOrdinal, deriveSessionLabel, CURRENT_SESSION } from "@/lib/utils/fees";
 
 // Year fee breakdown (matching the fee engine)
 const DUES_YEARS: { label: string; value: string; total: number; breakdown: string; type: "membership_levy" | "annual_dues" | "special_levy" | "other" }[] = [
@@ -91,7 +92,7 @@ export function ManualPaymentForm() {
         // Search profiles — exclude super_admin role
         let profilesQuery = supabase
           .from("profiles")
-          .select("id, full_name, email, matric_number, role")
+          .select("id, full_name, email, matric_number, role, academic_level")
           .neq("role", "super_admin");
 
         if (searchTerm) {
@@ -104,7 +105,7 @@ export function ManualPaymentForm() {
         // Search legacy members
         let legacyQuery = supabase
           .from("legacy_members")
-          .select("id, full_name, matric_number")
+          .select("id, full_name, matric_number, academic_level")
           .eq("claim_status", "unclaimed");
 
         if (searchTerm) {
@@ -137,11 +138,33 @@ export function ManualPaymentForm() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  const updatePaymentPeriod = (member: any, yearVal: string) => {
+    if (!member) return;
+    const currentLevelOrdinal = getLevelOrdinal(member.academic_level);
+    if (currentLevelOrdinal > 0) {
+      let targetYearOrdinal = 1;
+      if (yearVal === "year_2") targetYearOrdinal = 2;
+      else if (yearVal === "year_3") targetYearOrdinal = 3;
+      else if (yearVal === "year_4" || yearVal === "year_4f") targetYearOrdinal = 4;
+      else if (yearVal === "year_5") targetYearOrdinal = 5;
+      else if (yearVal === "year_6") targetYearOrdinal = 6;
+
+      const sessionLabel = deriveSessionLabel(currentLevelOrdinal, targetYearOrdinal, CURRENT_SESSION);
+      setValue("payment_period", sessionLabel);
+    } else {
+      setValue("payment_period", CURRENT_SESSION);
+    }
+  };
+
   const selectMember = (member: any) => {
     setSelectedMember(member);
     setValue("member_id", member.id);
     setSearchTerm("");
     setShowMemberDropdown(false);
+    
+    if (selectedDuesYear) {
+      updatePaymentPeriod(member, selectedDuesYear);
+    }
   };
 
   const handleDuesYearChange = (yearVal: string) => {
@@ -150,6 +173,9 @@ export function ManualPaymentForm() {
     if (info) {
       setValue("amount", formatAmountInput(String(info.total)));
       setValue("dues_type", info.type);
+      if (selectedMember) {
+        updatePaymentPeriod(selectedMember, yearVal);
+      }
     }
   };
 

@@ -9,6 +9,7 @@ import DuesReceipt from "../../../emails/DuesReceipt";
 import { parseMoneyAmount } from "@/lib/utils/money";
 import * as React from "react";
 import { createNotification } from "@/lib/actions/notification.actions";
+import { getLevelOrdinal, deriveSessionLabel, CURRENT_SESSION } from "@/lib/utils/fees";
 
 /** Fetch a single payment by reference — uses adminClient to bypass RLS join issues in checkout */
 export async function getPaymentByReference(reference: string) {
@@ -795,5 +796,103 @@ export async function failOnlinePayment(reference: string, gatewayResponse: any)
     return { success: true };
   } catch (err: any) {
     return { error: err?.message || "Failed to mark payment as failed" };
+  }
+}
+
+export async function fixHistoricalManualPayments() {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: "Authentication required" };
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile || profile.role !== "super_admin") {
+      return { error: "Unauthorized. Super Admin role required." };
+    }
+
+    // 1. Fetch all confirmed payments
+    const { data: payments, error: paymentsErr } = await adminClient
+      .from("payments")
+      .select("id, profile_id, dues_type, payment_period, status, created_at")
+      .eq("status", "confirmed")
+      .not("profile_id", "is", null)
+      .order("created_at", { ascending: true });
+
+    if (paymentsErr || !payments) {
+      return { error: paymentsErr?.message || "Failed to fetch payments" };
+    }
+
+    // 2. Fetch all profiles to know their academic level
+    const { data: profiles, error: profilesErr } = await adminClient
+      .from("profiles")
+      .select("id, academic_level");
+
+    if (profilesErr || !profiles) {
+      return { error: profilesErr?.message || "Failed to fetch profiles" };
+    }
+
+    const profileMap = new Map(profiles.map((p) => [p.id, p.academic_level]));
+    let updateCount = 0;
+
+    // Group confirmed payments by profile_id
+    const paymentsByProfile: Record<string, typeof payments> = {};
+    for (const p of payments) {
+      if (!paymentsByProfile[p.profile_id!]) {
+        paymentsByProfile[p.profile_id!] = [];
+      }
+      paymentsByProfile[p.profile_id!].push(p);
+    }
+
+    // Loop through each profile's payments
+    for (const [profileId, profilePayments] of Object.entries(paymentsByProfile)) {
+      const academicLevel = profileMap.get(profileId);
+      const currentLevelOrdinal = getLevelOrdinal(academicLevel);
+
+      if (currentLevelOrdinal === 0) continue;
+
+      // Group payments by type
+      const levyPayments = profilePayments.filter((p) => p.dues_type === "membership_levy");
+      const annualDuesPayments = profilePayments.filter((p) => p.dues_type === "annual_dues");
+
+      // For Year 1 (membership_levy)
+      const expectedLevyPeriod = deriveSessionLabel(currentLevelOrdinal, 1, CURRENT_SESSION);
+      for (const p of levyPayments) {
+        if (!p.payment_period || !p.payment_period.startsWith(expectedLevyPeriod)) {
+          const { error: updateErr } = await adminClient
+            .from("payments")
+            .update({ payment_period: expectedLevyPeriod })
+            .eq("id", p.id);
+          if (!updateErr) updateCount++;
+        }
+      }
+
+      // For Year 2, 3, 4, etc. (annual_dues)
+      for (let i = 0; i < annualDuesPayments.length; i++) {
+        const targetYearOrdinal = i + 2; // annual dues start from Year 2
+        if (targetYearOrdinal > currentLevelOrdinal) break; // ignore excess payments
+
+        const expectedPeriod = deriveSessionLabel(currentLevelOrdinal, targetYearOrdinal, CURRENT_SESSION);
+        const p = annualDuesPayments[i];
+
+        if (!p.payment_period || !p.payment_period.startsWith(expectedPeriod)) {
+          const { error: updateErr } = await adminClient
+            .from("payments")
+            .update({ payment_period: expectedPeriod })
+            .eq("id", p.id);
+          if (!updateErr) updateCount++;
+        }
+      }
+    }
+
+    revalidatePath("/dues");
+    revalidatePath("/admin/dues");
+    return { success: true, updatedCount: updateCount };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to fix historical manual payments" };
   }
 }

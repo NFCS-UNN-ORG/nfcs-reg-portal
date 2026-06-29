@@ -7,6 +7,7 @@ import RegistrationConfirmation from "../../../emails/RegistrationConfirmation";
 import ApprovalNotification from "../../../emails/ApprovalNotification";
 import * as React from "react";
 import { createNotification } from "@/lib/actions/notification.actions";
+import { getYearsOfStudy } from "@/lib/utils/unn-data";
 
 // Helper to upload passport photo
 async function uploadPassportPhoto(file: File, userId: string): Promise<string> {
@@ -139,6 +140,36 @@ export async function registerMember(formData: FormData) {
       console.error("Failed to send registration confirmation email:", emailErr);
     }
 
+    // In-app notification for the newly registered student
+    await createNotification({
+      profile_id: userId,
+      title: "Registration Pending Approval ⏳",
+      body: "Thank you for completing your profile! Your registration has been submitted for review. An Exco member will verify your details and activate your account within the next 24 hours.",
+      type: "general",
+    });
+
+    // Notify all Excos and Super Admins
+    try {
+      const { data: admins } = await adminClient
+        .from("profiles")
+        .select("id")
+        .in("role", ["exco", "super_admin"]);
+
+      if (admins && admins.length > 0) {
+        for (const admin of admins) {
+          await createNotification({
+            profile_id: admin.id,
+            title: "New Registration Awaiting Review 👤",
+            body: `A new student, ${full_name} (${matric_number}), has completed their profile details and is awaiting your approval.`,
+            type: "general",
+            metadata: { member_id: userId },
+          });
+        }
+      }
+    } catch (adminNotifErr) {
+      console.error("Failed to notify admins of new registration:", adminNotifErr);
+    }
+
     console.log("[registerMember] Registration complete for:", email);
     return { success: true };
   } catch (err: any) {
@@ -191,6 +222,36 @@ export async function approveMember(memberId: string, excoId: string) {
     type: "account_approved",
     metadata: { approved_by: excoId },
   });
+
+  // Fetch exco name and notify other admins/excos
+  try {
+    const { data: excoProfile } = await adminClient
+      .from("profiles")
+      .select("full_name")
+      .eq("id", excoId)
+      .single();
+    const excoName = excoProfile?.full_name || "an Exco member";
+
+    const { data: otherAdmins } = await adminClient
+      .from("profiles")
+      .select("id")
+      .in("role", ["exco", "super_admin"])
+      .neq("id", excoId);
+
+    if (otherAdmins && otherAdmins.length > 0) {
+      for (const admin of otherAdmins) {
+        await createNotification({
+          profile_id: admin.id,
+          title: "Member Approved ✓",
+          body: `${member.full_name} was approved by ${excoName}.`,
+          type: "general",
+          metadata: { member_id: memberId, approved_by: excoId },
+        });
+      }
+    }
+  } catch (notifErr) {
+    console.error("Failed to notify other admins of member approval:", notifErr);
+  }
 
   revalidatePath("/admin/members");
   revalidatePath(`/admin/members/${memberId}`);
@@ -623,7 +684,7 @@ export async function updateExcoPosition(
       const { data: existing } = await adminClient
         .from("profiles")
         .select("id, full_name")
-        .eq("position", position)
+        .eq("position", position as any)
         .eq("role", "exco")
         .neq("id", memberId)
         .limit(1);
@@ -637,7 +698,7 @@ export async function updateExcoPosition(
 
     const { error } = await adminClient
       .from("profiles")
-      .update({ position: position || null })
+      .update({ position: (position as any) || null })
       .eq("id", memberId);
 
     if (error) {
@@ -683,3 +744,336 @@ export async function sendPasswordReset(email: string, adminId: string) {
     return { error: err?.message || "Failed to generate reset link" };
   }
 }
+
+export async function bulkApproveMembers(memberIds: string[], excoId: string) {
+  try {
+    if (!memberIds || memberIds.length === 0) {
+      return { error: "No members selected" };
+    }
+
+    // Fetch the list of members first to get names/emails for notifications
+    const { data: members, error: fetchError } = await adminClient
+      .from("profiles")
+      .select("id, email, full_name, status")
+      .in("id", memberIds);
+
+    if (fetchError || !members) {
+      return { error: fetchError?.message || "Failed to fetch members for bulk approval" };
+    }
+
+    // Filter to only those that actually need approval (pending status)
+    const pendingMembers = members.filter((m) => m.status === "pending");
+    if (pendingMembers.length === 0) {
+      return { success: true, message: "No pending members to approve in selection", count: 0 };
+    }
+
+    const pendingIds = pendingMembers.map((m) => m.id);
+
+    // Perform bulk update in a single query
+    const { error: updateError } = await adminClient
+      .from("profiles")
+      .update({
+        status: "active",
+        approved_by: excoId,
+        approved_at: new Date().toISOString(),
+      })
+      .in("id", pendingIds);
+
+    if (updateError) {
+      return { error: updateError.message };
+    }
+
+    // Create audit logs for each approved member
+    const auditLogs = pendingIds.map((id) => ({
+      actor_id: excoId,
+      action: "approve_member",
+      target_type: "profile",
+      target_id: id,
+    }));
+    await adminClient.from("audit_log").insert(auditLogs);
+
+    // Send emails (asynchronously/concurrently without blocking response)
+    const emailPromises = pendingMembers.map(async (m) => {
+      if (m.email) {
+        try {
+          await sendEmail({
+            to: m.email,
+            subject: "NFCS Portal Activated",
+            react: <ApprovalNotification fullName={m.full_name} status="active" />,
+          });
+        } catch (emailErr) {
+          console.error(`Failed to send approval email to ${m.email}:`, emailErr);
+        }
+      }
+    });
+
+    // Create in-app notifications for each student
+    const studentNotifPromises = pendingIds.map((id) =>
+      createNotification({
+        profile_id: id,
+        title: "Account Approved ✓",
+        body: "Your NFCS UNN account has been verified and activated. Welcome to the federation!",
+        type: "account_approved",
+        metadata: { approved_by: excoId },
+      })
+    );
+
+    // Fetch exco name and notify other admins/excos
+    let excoName = "an Exco member";
+    try {
+      const { data: excoProfile } = await adminClient
+        .from("profiles")
+        .select("full_name")
+        .eq("id", excoId)
+        .single();
+      if (excoProfile) {
+        excoName = excoProfile.full_name;
+      }
+    } catch (excoErr) {
+      console.error("Failed to fetch exco name for bulk approval notifications:", excoErr);
+    }
+
+    const { data: otherAdmins } = await adminClient
+      .from("profiles")
+      .select("id")
+      .in("role", ["exco", "super_admin"])
+      .neq("id", excoId);
+
+    const adminNotifPromises = [];
+    if (otherAdmins && otherAdmins.length > 0) {
+      const namesList = pendingMembers.map((m) => m.full_name).join(", ");
+      const limitNames = namesList.length > 80 ? `${namesList.substring(0, 77)}...` : namesList;
+      const body = `${pendingMembers.length} member(s) (${limitNames}) were approved by ${excoName}.`;
+
+      for (const admin of otherAdmins) {
+        adminNotifPromises.push(
+          createNotification({
+            profile_id: admin.id,
+            title: `${pendingMembers.length} Members Approved ✓`,
+            body,
+            type: "general",
+            metadata: { approved_member_ids: pendingIds, approved_by: excoId },
+          })
+        );
+      }
+    }
+
+    // Wait for all non-blocking actions to complete/kick off
+    await Promise.all([
+      ...emailPromises,
+      ...studentNotifPromises,
+      ...adminNotifPromises,
+    ]);
+
+    revalidatePath("/admin/members");
+    return { success: true, count: pendingIds.length };
+  } catch (err: any) {
+    return { error: err?.message || "An unexpected error occurred during bulk approval" };
+  }
+}
+
+export async function bulkSuspendMembers(memberIds: string[], excoId: string) {
+  try {
+    if (!memberIds || memberIds.length === 0) {
+      return { error: "No members selected" };
+    }
+
+    // Fetch members to check status
+    const { data: members, error: fetchError } = await adminClient
+      .from("profiles")
+      .select("id, email, full_name, status")
+      .in("id", memberIds);
+
+    if (fetchError || !members) {
+      return { error: fetchError?.message || "Failed to fetch members for bulk suspension" };
+    }
+
+    // Filter to those that are not already suspended
+    const targetMembers = members.filter((m) => m.status !== "suspended");
+    if (targetMembers.length === 0) {
+      return { success: true, message: "Selected members are already suspended", count: 0 };
+    }
+
+    const targetIds = targetMembers.map((m) => m.id);
+
+    // Perform bulk update in a single query
+    const { error: updateError } = await adminClient
+      .from("profiles")
+      .update({
+        status: "suspended",
+      })
+      .in("id", targetIds);
+
+    if (updateError) {
+      return { error: updateError.message };
+    }
+
+    // Create audit logs
+    const auditLogs = targetIds.map((id) => ({
+      actor_id: excoId,
+      action: "suspend_member",
+      target_type: "profile",
+      target_id: id,
+    }));
+    await adminClient.from("audit_log").insert(auditLogs);
+
+    // Send emails
+    const emailPromises = targetMembers.map(async (m) => {
+      if (m.email) {
+        try {
+          await sendEmail({
+            to: m.email,
+            subject: "NFCS Account Update",
+            react: <ApprovalNotification fullName={m.full_name} status="suspended" />,
+          });
+        } catch (emailErr) {
+          console.error(`Failed to send suspension email to ${m.email}:`, emailErr);
+        }
+      }
+    });
+
+    // Create in-app notifications
+    const notifPromises = targetIds.map((id) =>
+      createNotification({
+        profile_id: id,
+        title: "Account Suspended",
+        body: "Your NFCS UNN account has been suspended. Please contact an Exco member for more information.",
+        type: "account_suspended",
+        metadata: { suspended_by: excoId },
+      })
+    );
+
+    await Promise.all([...emailPromises, ...notifPromises]);
+
+    revalidatePath("/admin/members");
+    return { success: true, count: targetIds.length };
+  } catch (err: any) {
+    return { error: err?.message || "An unexpected error occurred during bulk suspension" };
+  }
+}
+
+export async function performSessionRollover(adminId: string) {
+  try {
+    // 1. Verify caller is super_admin
+    const { data: adminProfile } = await adminClient
+      .from("profiles")
+      .select("role")
+      .eq("id", adminId)
+      .single();
+
+    if (!adminProfile || adminProfile.role !== "super_admin") {
+      return { error: "Unauthorized. Super Admin privileges required." };
+    }
+
+    // 2. Fetch all profiles that are students or excos
+    const { data: profiles, error: fetchErr } = await adminClient
+      .from("profiles")
+      .select("id, full_name, role, academic_level, faculty, department, status")
+      .in("role", ["student", "exco"]);
+
+    if (fetchErr || !profiles) {
+      return { error: fetchErr?.message || "Failed to fetch student profiles for rollover" };
+    }
+
+    let processedCount = 0;
+    const notificationsToInsert: any[] = [];
+    
+    for (const profile of profiles) {
+      // Skip if they are already suspended or legacy (only process active/pending students)
+      if (profile.status === "suspended") continue;
+
+      const level = profile.academic_level;
+      const totalCourseYears = getYearsOfStudy(profile.faculty, profile.department);
+
+      let newLevel = level;
+      let newRole = profile.role;
+
+      if (level === "100 Level") {
+        newLevel = "200 Level";
+      } else if (level === "200 Level") {
+        newLevel = "300 Level";
+      } else if (level === "300 Level") {
+        newLevel = "400 Level";
+      } else if (level === "400 Level") {
+        if (totalCourseYears > 4) {
+          newLevel = "500 Level";
+        } else {
+          newLevel = "Graduate";
+          newRole = "alumnus";
+        }
+      } else if (level === "500 Level") {
+        if (totalCourseYears > 5) {
+          newLevel = "600 Level";
+        } else {
+          newLevel = "Graduate";
+          newRole = "alumnus";
+        }
+      } else if (level === "600 Level") {
+        newLevel = "Graduate";
+        newRole = "alumnus";
+      }
+
+      // If their role was exco, reset to student when they promote
+      if (profile.role === "exco") {
+        if (newRole !== "alumnus") {
+          newRole = "student";
+        }
+      }
+
+      const updatePayload: any = {
+        academic_level: newLevel,
+        role: newRole,
+        position: null, // Clear exco positions
+      };
+
+      const { error: updateErr } = await adminClient
+        .from("profiles")
+        .update(updatePayload)
+        .eq("id", profile.id);
+
+      if (!updateErr) {
+        processedCount++;
+
+        if (newRole !== "alumnus") {
+          notificationsToInsert.push({
+            profile_id: profile.id,
+            title: "New Academic Session 🎉",
+            body: `Welcome to the new academic session! You have been promoted to ${newLevel}. Let's make this year a successful and blessed one.`,
+            type: "general",
+            is_read: false,
+          });
+        } else {
+          notificationsToInsert.push({
+            profile_id: profile.id,
+            title: "Congratulations Graduate! 🎓",
+            body: `Congratulations on completing your program duration! Your portal profile has been updated to Alumnus status.`,
+            type: "general",
+            is_read: false,
+          });
+        }
+      }
+    }
+
+    // Insert all notifications in bulk
+    if (notificationsToInsert.length > 0) {
+      await adminClient.from("notifications").insert(notificationsToInsert);
+    }
+
+    // Insert audit log
+    await adminClient.from("audit_log").insert({
+      actor_id: adminId,
+      action: "session_rollover",
+      target_type: "system",
+      metadata: { processed_count: processedCount },
+    });
+
+    revalidatePath("/admin/settings");
+    revalidatePath("/admin/members");
+    revalidatePath("/dashboard");
+    
+    return { success: true, count: processedCount };
+  } catch (err: any) {
+    return { error: err?.message || "An unexpected error occurred during session rollover" };
+  }
+}
+

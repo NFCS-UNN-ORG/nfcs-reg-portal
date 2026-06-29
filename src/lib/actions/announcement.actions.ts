@@ -43,6 +43,27 @@ export async function createAnnouncement(formData: FormData, excoId: string) {
       },
     });
 
+    // Send in-app notifications to all active members
+    try {
+      const { data: profiles } = await adminClient
+        .from("profiles")
+        .select("id")
+        .eq("status", "active");
+
+      if (profiles && profiles.length > 0) {
+        const notifications = profiles.map((p) => ({
+          profile_id: p.id,
+          title: "New Announcement 📢",
+          body: title,
+          type: "general",
+          is_read: false,
+        }));
+        await adminClient.from("notifications").insert(notifications);
+      }
+    } catch (notifErr) {
+      console.error("Failed to create announcement notifications:", notifErr);
+    }
+
     revalidatePath("/announcements");
     revalidatePath("/dashboard");
     return { success: true, id: announcement.id };
