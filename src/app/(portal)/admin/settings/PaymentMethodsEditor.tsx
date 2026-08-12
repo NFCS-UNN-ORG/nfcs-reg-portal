@@ -4,32 +4,35 @@ import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
-import { savePaymentMethods } from "@/lib/actions/dues-config.actions";
-import { CreditCard, Check, Loader2 } from "lucide-react";
+import { savePaymentMethods, getPaymentSettings } from "@/lib/actions/dues-config.actions";
+import { CreditCard, Check, ShieldCheck } from "lucide-react";
 
 export function PaymentMethodsEditor({ adminId }: { adminId: string }) {
   const { toast } = useToast();
   const [loading, setLoading] = React.useState(false);
   const [onlineEnabled, setOnlineEnabled] = React.useState(true);
+  const [activeGateway, setActiveGateway] = React.useState<"paystack" | "flutterwave">("paystack");
   const [bankName, setBankName] = React.useState("Access Bank");
   const [accountName, setAccountName] = React.useState("NFCS UNN Chapter");
   const [accountNumber, setAccountNumber] = React.useState("1234567890");
   const [receiptChannels, setReceiptChannels] = React.useState("WhatsApp, Physical Card");
 
-  // Load from localStorage on mount
+  // Load from database (and fallback to localStorage) on mount
   React.useEffect(() => {
-    const savedOnline = localStorage.getItem("settings_online_enabled");
-    const savedBank = localStorage.getItem("settings_bank_name");
-    const savedAccName = localStorage.getItem("settings_account_name");
-    const savedAccNum = localStorage.getItem("settings_account_number");
-    const savedChannels = localStorage.getItem("settings_receipt_channels");
-
-    if (savedOnline !== null) setOnlineEnabled(savedOnline === "true");
-    if (savedBank) setBankName(savedBank);
-    if (savedAccName) setAccountName(savedAccName);
-    if (savedAccNum) setAccountNumber(savedAccNum);
-    if (savedChannels) setReceiptChannels(savedChannels);
+    async function loadSettings() {
+      const dbSettings = await getPaymentSettings();
+      if (dbSettings) {
+        setOnlineEnabled(dbSettings.onlineEnabled);
+        setActiveGateway(dbSettings.activeGateway);
+        setBankName(dbSettings.bankName);
+        setAccountName(dbSettings.accountName);
+        setAccountNumber(dbSettings.accountNumber);
+        setReceiptChannels(dbSettings.receiptChannels);
+      }
+    }
+    loadSettings();
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -38,6 +41,7 @@ export function PaymentMethodsEditor({ adminId }: { adminId: string }) {
 
     const values = {
       onlineEnabled,
+      activeGateway,
       bankName,
       accountName,
       accountNumber,
@@ -55,6 +59,7 @@ export function PaymentMethodsEditor({ adminId }: { adminId: string }) {
       } else {
         // Save to localStorage
         localStorage.setItem("settings_online_enabled", String(onlineEnabled));
+        localStorage.setItem("settings_active_gateway", activeGateway);
         localStorage.setItem("settings_bank_name", bankName);
         localStorage.setItem("settings_account_name", accountName);
         localStorage.setItem("settings_account_number", accountNumber);
@@ -62,7 +67,7 @@ export function PaymentMethodsEditor({ adminId }: { adminId: string }) {
 
         toast({
           title: "Settings Saved",
-          description: "Payment methods have been successfully updated.",
+          description: `Payment methods updated. Active online gateway: ${activeGateway === "paystack" ? "Paystack" : "Flutterwave"}.`,
           variant: "success",
         });
       }
@@ -84,7 +89,7 @@ export function PaymentMethodsEditor({ adminId }: { adminId: string }) {
           <CreditCard className="h-5 w-5 text-brand" /> Payment Methods Settings
         </CardTitle>
         <CardDescription>
-          Configure how members pay their chapter dues (online integration & bank transfer instructions).
+          Configure active online payment gateway (Paystack / Flutterwave) and bank transfer instructions for chapter dues.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -93,7 +98,7 @@ export function PaymentMethodsEditor({ adminId }: { adminId: string }) {
           <div className="flex items-center justify-between p-3.5 rounded-lg border border-neutrals-borderLight bg-surface-page select-none">
             <div className="space-y-0.5">
               <h4 className="text-xs font-bold text-text-primary">Enable Online Payment Gateway</h4>
-              <p className="text-[10px] text-text-tertiary">Allow students to pay dues instantly using Monnify/OPay credit card/transfer webhooks.</p>
+              <p className="text-[10px] text-text-tertiary">Allow students to pay dues instantly online via credit card / USSD / bank transfer.</p>
             </div>
             <button
               type="button"
@@ -108,6 +113,27 @@ export function PaymentMethodsEditor({ adminId }: { adminId: string }) {
                 }`}
               />
             </button>
+          </div>
+
+          {/* Active Payment Gateway Selector (Super Admin / Exco Control) */}
+          <div className="space-y-1.5 p-3.5 rounded-lg border border-brand-border bg-brand-light">
+            <label className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4 text-brand" /> Active Online Payment Gateway
+            </label>
+            <p className="text-[11px] text-text-secondary">
+              Select which gateway is active across the entire portal for student checkout payments.
+            </p>
+            <div className="pt-2">
+              <Select
+                value={activeGateway}
+                onChange={(e) => setActiveGateway(e.target.value as "paystack" | "flutterwave")}
+                disabled={!onlineEnabled}
+                className="w-full sm:w-64 bg-white"
+              >
+                <option value="paystack">Paystack (Default)</option>
+                <option value="flutterwave">Flutterwave</option>
+              </Select>
+            </div>
           </div>
 
           {/* Bank Transfer Details */}

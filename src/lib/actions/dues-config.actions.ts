@@ -72,6 +72,43 @@ export async function saveDuesConfig(
   return { success: true };
 }
 
+export async function getPaymentSettings() {
+  try {
+    const { data } = await adminClient
+      .from("audit_log")
+      .select("metadata")
+      .eq("action", "update_payment_methods")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (data?.metadata && typeof data.metadata === "object") {
+      const meta = data.metadata as Record<string, any>;
+      return {
+        onlineEnabled: meta.onlineEnabled ?? true,
+        activeGateway: (meta.activeGateway as "paystack" | "flutterwave") ||
+          (process.env.NEXT_PUBLIC_ACTIVE_PAYMENT_GATEWAY as "paystack" | "flutterwave") ||
+          "paystack",
+        bankName: meta.bankName || "Access Bank",
+        accountName: meta.accountName || "NFCS UNN Chapter",
+        accountNumber: meta.accountNumber || "1234567890",
+        receiptChannels: meta.receiptChannels || "WhatsApp, Physical Card",
+      };
+    }
+  } catch {
+    // Fallback
+  }
+
+  return {
+    onlineEnabled: true,
+    activeGateway: (process.env.NEXT_PUBLIC_ACTIVE_PAYMENT_GATEWAY as "paystack" | "flutterwave") || "paystack",
+    bankName: "Access Bank",
+    accountName: "NFCS UNN Chapter",
+    accountNumber: "1234567890",
+    receiptChannels: "WhatsApp, Physical Card",
+  };
+}
+
 export async function savePaymentMethods(values: any, adminId: string) {
   try {
     await adminClient.from("audit_log").insert({
@@ -81,6 +118,7 @@ export async function savePaymentMethods(values: any, adminId: string) {
       metadata: values,
     });
     revalidatePath("/admin/settings");
+    revalidatePath("/dues/pay");
     return { success: true };
   } catch (err: any) {
     return { error: err?.message || "Failed to save payment methods" };

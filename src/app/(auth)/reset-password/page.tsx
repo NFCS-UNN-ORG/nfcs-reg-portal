@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { updatePassword } from "@/lib/actions/auth.actions";
+import { createClient } from "@/lib/supabase/client";
 import { AlertCircle, CheckCircle2, ChevronLeft, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import Link from "next/link";
@@ -28,6 +29,8 @@ function ResetPasswordContent() {
   const router = useRouter();
   const { toast } = useToast();
 
+  const [isVerifyingSession, setIsVerifyingSession] = React.useState(true);
+  const [hasValidSession, setHasValidSession] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -47,6 +50,37 @@ function ResetPasswordContent() {
     if (savedLength) setMinPasswordLength(parseInt(savedLength, 10));
     if (savedNum !== null) setRequireNumbers(savedNum === "true");
     if (savedSym !== null) setRequireSymbols(savedSym === "true");
+
+    // Check if user has active recovery session
+    const checkSession = async () => {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+        setHasValidSession(true);
+      } else {
+        // Also listen for auth state changes (e.g. hash token exchange)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          if (session && (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN")) {
+            setHasValidSession(true);
+          }
+        });
+
+        // Small delay to allow hash token parsing if present
+        setTimeout(async () => {
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          if (currentSession) {
+            setHasValidSession(true);
+          }
+          setIsVerifyingSession(false);
+          subscription.unsubscribe();
+        }, 1200);
+        return;
+      }
+      setIsVerifyingSession(false);
+    };
+
+    checkSession();
   }, []);
 
   const {
@@ -111,7 +145,7 @@ function ResetPasswordContent() {
         });
         setTimeout(() => {
           router.push("/login");
-        }, 3000);
+        }, 2500);
       }
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");
@@ -119,6 +153,17 @@ function ResetPasswordContent() {
       setIsSubmitting(false);
     }
   };
+
+  if (isVerifyingSession) {
+    return (
+      <main className="min-h-screen w-full flex items-center justify-center bg-surface-page px-4 select-none">
+        <div className="flex flex-col items-center justify-center py-10 gap-3">
+          <div className="h-7 w-7 border-2 border-brand border-t-transparent animate-spin rounded-full" />
+          <span className="text-xs text-text-secondary font-medium">Verifying reset session...</span>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen w-full flex items-center justify-center bg-surface-page px-4 select-none animate-in fade-in duration-200">
@@ -156,7 +201,17 @@ function ResetPasswordContent() {
               </p>
             </div>
 
-            {success ? (
+            {!hasValidSession ? (
+              <div className="flex flex-col items-center text-center gap-4 py-4">
+                <div className="flex items-center gap-2 rounded-lg bg-status-errorBackground p-3 text-xs font-semibold text-status-errorText border border-status-errorBorder w-full">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>Invalid or expired password reset link. Please request a new link.</span>
+                </div>
+                <Button asChild variant="primary" className="w-full mt-2 text-xs font-semibold">
+                  <Link href="/forgot-password">Request New Reset Link</Link>
+                </Button>
+              </div>
+            ) : success ? (
               <div className="flex flex-col items-center text-center gap-3 p-4 rounded-xl bg-status-successBackground border border-status-successBorder text-status-successText animate-in zoom-in-95">
                 <CheckCircle2 className="h-8 w-8 text-status-successText" />
                 <div className="space-y-1">

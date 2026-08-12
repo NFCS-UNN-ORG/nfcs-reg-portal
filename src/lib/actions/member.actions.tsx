@@ -1,6 +1,8 @@
 "use server";
 
 import { adminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { getAppUrl } from "@/lib/utils/app-url";
 import { revalidatePath } from "next/cache";
 import { sendEmail } from "@/lib/email";
 import RegistrationConfirmation from "../../../emails/RegistrationConfirmation";
@@ -55,27 +57,32 @@ export async function registerMember(formData: FormData) {
       return { error: "Required fields are missing" };
     }
 
-    // Create Auth User via admin client to bypass email confirmation (avoids SMTP 500 errors)
-    console.log("[registerMember] Attempting admin createUser for:", email);
-    const { data: authData, error: signupError } = await adminClient.auth.admin.createUser({
+    // Create Auth User via standard Supabase auth client to trigger confirmation email
+    console.log("[registerMember] Attempting supabase.auth.signUp for:", email);
+    const supabase = await createClient();
+    const appUrl = getAppUrl();
+
+    const { data: authData, error: signupError } = await supabase.auth.signUp({
       email,
       password,
-      email_confirm: true,
-      user_metadata: {
-        full_name,
+      options: {
+        emailRedirectTo: `${appUrl}/auth/callback?next=/login`,
+        data: {
+          full_name,
+        },
       },
     });
 
     if (signupError) {
-      console.error("[registerMember] admin createUser error:", signupError);
+      console.error("[registerMember] signUp error:", signupError);
       return { error: signupError.message };
     }
 
     const userId = authData.user?.id;
-    console.log("[registerMember] admin createUser success. userId:", userId);
+    console.log("[registerMember] signUp success. userId:", userId);
 
     if (!userId) {
-      console.error("[registerMember] No userId returned from admin createUser");
+      console.error("[registerMember] No userId returned from signUp");
       return { error: "Failed to retrieve user ID after signup" };
     }
 
@@ -171,7 +178,8 @@ export async function registerMember(formData: FormData) {
     }
 
     console.log("[registerMember] Registration complete for:", email);
-    return { success: true };
+    const emailConfirmationRequired = !authData.session;
+    return { success: true, emailConfirmationRequired, email };
   } catch (err: any) {
     console.error("[registerMember] Unexpected error:", err);
     return { error: err?.message || "An error occurred during profile registration." };

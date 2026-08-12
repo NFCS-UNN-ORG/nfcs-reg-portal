@@ -7,9 +7,9 @@ import { manualPaymentSchema, type ManualPaymentFormValues } from "@/lib/validat
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { recordManualPayment } from "@/lib/actions/payment.actions";
+import { recordManualPayment, getMemberPaymentContext } from "@/lib/actions/payment.actions";
 import { createClient } from "@/lib/supabase/client";
-import { AlertCircle, CheckCircle, Search, User, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle, Search, User, RefreshCw, Loader2, ShieldCheck } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { useUser } from "@/hooks/useUser";
 import { formatAmountInput, formatNaira } from "@/lib/utils/money";
@@ -57,6 +57,8 @@ export function ManualPaymentForm() {
 
   // Dues year selection
   const [selectedDuesYear, setSelectedDuesYear] = React.useState("");
+  const [memberContext, setMemberContext] = React.useState<any | null>(null);
+  const [isContextLoading, setIsContextLoading] = React.useState(false);
   const selectedDuesInfo = DUES_YEARS.find((d) => d.value === selectedDuesYear);
 
   const {
@@ -92,7 +94,7 @@ export function ManualPaymentForm() {
         // Search profiles — exclude super_admin role
         let profilesQuery = supabase
           .from("profiles")
-          .select("id, full_name, email, matric_number, role, academic_level")
+          .select("id, full_name, email, matric_number, role, academic_level, faculty, department")
           .neq("role", "super_admin");
 
         if (searchTerm) {
@@ -138,17 +140,55 @@ export function ManualPaymentForm() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  const updatePaymentPeriod = (member: any, yearVal: string) => {
-    if (!member) return;
-    const currentLevelOrdinal = getLevelOrdinal(member.academic_level);
-    if (currentLevelOrdinal > 0) {
-      let targetYearOrdinal = 1;
-      if (yearVal === "year_2") targetYearOrdinal = 2;
-      else if (yearVal === "year_3") targetYearOrdinal = 3;
-      else if (yearVal === "year_4" || yearVal === "year_4f") targetYearOrdinal = 4;
-      else if (yearVal === "year_5") targetYearOrdinal = 5;
-      else if (yearVal === "year_6") targetYearOrdinal = 6;
+  const getYearOrdinal = (val: string) => {
+    switch (val) {
+      case "year_1": return 1;
+      case "year_2": return 2;
+      case "year_3": return 3;
+      case "year_4":
+      case "year_4f": return 4;
+      case "year_5": return 5;
+      case "year_6": return 6;
+      default: return 1;
+    }
+  };
 
+  const checkYearOptionStatus = (yearVal: string, context: any, member: any) => {
+    if (!context || !context.tracker || context.userIsAlumnus || context.currentLevelOrdinal === 0) {
+      return { disabled: false, labelSuffix: "" };
+    }
+
+    const ord = getYearOrdinal(yearVal);
+    const { currentLevelOrdinal, tracker } = context;
+
+    if (ord > currentLevelOrdinal) {
+      return {
+        disabled: true,
+        labelSuffix: ` (Not Reached — Student in ${member?.academic_level || "lower level"})`,
+      };
+    }
+
+    const targetSession = tracker.find((s: any) => s.yearOrdinal === ord);
+    if (targetSession?.existingPayment?.status === "confirmed") {
+      return { disabled: true, labelSuffix: " (Already Paid ✓)" };
+    }
+
+    if (ord > 1) {
+      const prevSession = tracker.find((s: any) => s.yearOrdinal === ord - 1);
+      if (prevSession && prevSession.existingPayment?.status !== "confirmed") {
+        return { disabled: true, labelSuffix: ` (Pay Year ${ord - 1} First)` };
+      }
+    }
+
+    return { disabled: false, labelSuffix: " (Payable Now)" };
+  };
+
+  const updatePaymentPeriod = (member: any, yearVal: string, contextOverride?: any) => {
+    if (!member) return;
+    const ctx = contextOverride || memberContext;
+    const currentLevelOrdinal = ctx?.currentLevelOrdinal ?? getLevelOrdinal(member.academic_level);
+    if (currentLevelOrdinal > 0) {
+      const targetYearOrdinal = getYearOrdinal(yearVal);
       const sessionLabel = deriveSessionLabel(currentLevelOrdinal, targetYearOrdinal, CURRENT_SESSION);
       setValue("payment_period", sessionLabel);
     } else {
@@ -156,14 +196,41 @@ export function ManualPaymentForm() {
     }
   };
 
-  const selectMember = (member: any) => {
+  const selectMember = async (member: any) => {
     setSelectedMember(member);
     setValue("member_id", member.id);
     setSearchTerm("");
     setShowMemberDropdown(false);
-    
-    if (selectedDuesYear) {
-      updatePaymentPeriod(member, selectedDuesYear);
+    setIsContextLoading(true);
+
+    try {
+      const contextRes = await getMemberPaymentContext(member.id);
+      if (contextRes?.success) {
+        setMemberContext(contextRes);
+
+        // Auto-select first payable year
+        const payableOption = DUES_YEARS.find((y) => {
+          const status = checkYearOptionStatus(y.value, contextRes, member);
+          return !status.disabled;
+        });
+
+        if (payableOption) {
+          setSelectedDuesYear(payableOption.value);
+          setValue("amount", formatAmountInput(String(payableOption.total)));
+          setValue("dues_type", payableOption.type);
+          updatePaymentPeriod(member, payableOption.value, contextRes);
+        } else {
+          setSelectedDuesYear("");
+          setValue("amount", "");
+          setValue("payment_period", CURRENT_SESSION);
+        }
+      } else {
+        setMemberContext(null);
+      }
+    } catch {
+      setMemberContext(null);
+    } finally {
+      setIsContextLoading(false);
     }
   };
 
@@ -255,27 +322,74 @@ export function ManualPaymentForm() {
           <label className="text-xs font-semibold text-text-secondary">Select Member</label>
           
           {selectedMember ? (
-            <div className="flex items-center justify-between p-3.5 rounded-lg border border-brand-border bg-brand-light text-brand-accent select-none">
-              <div className="flex items-center gap-2.5">
-                <User className="h-4 w-4 shrink-0" />
-                <div className="text-xs text-left">
-                  <span className="font-bold">{selectedMember.full_name}</span>
-                  <span className="text-[11px] text-text-secondary ml-2 font-mono">
-                    ({selectedMember.matric_number || "No matric"})
-                  </span>
+            <div className="space-y-2 select-none">
+              <div className="flex items-center justify-between p-3.5 rounded-lg border border-brand-border bg-brand-light text-brand-accent">
+                <div className="flex items-center gap-2.5">
+                  <User className="h-4 w-4 shrink-0" />
+                  <div className="text-xs text-left">
+                    <span className="font-bold">{selectedMember.full_name}</span>
+                    <span className="text-[11px] text-text-secondary ml-2 font-mono">
+                      ({selectedMember.matric_number || "No matric"})
+                    </span>
+                    {selectedMember.academic_level && (
+                      <span className="ml-2 font-semibold text-[10px] text-brand-accent bg-brand/10 px-1.5 py-0.5 rounded">
+                        {selectedMember.academic_level}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setSelectedMember(null);
+                    setMemberContext(null);
+                    setValue("member_id", "");
+                    setSelectedDuesYear("");
+                    setValue("amount", "");
+                  }}
+                  className="h-7 text-[11px] px-2"
+                >
+                  Clear Selection
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setSelectedMember(null);
-                  setValue("member_id", "");
-                }}
-                className="h-7 text-[11px] px-2"
-              >
-                Clear Selection
-              </Button>
+
+              {/* Live Member Payment Tracker Banner */}
+              {isContextLoading ? (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-surface-subtle text-xs text-text-secondary border border-neutrals-border">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />
+                  <span>Loading student payment history & tracker...</span>
+                </div>
+              ) : memberContext ? (
+                <div className="p-3 rounded-lg bg-surface-page border border-neutrals-border space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between font-semibold text-text-primary text-[11px]">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5 text-brand" /> Student Payment Tracker Summary
+                    </span>
+                    <span className="text-[10px] text-text-tertiary">
+                      {memberContext.userIsAlumnus ? "Alumni Account" : `Max Level: ${selectedMember.academic_level || "100 Level"}`}
+                    </span>
+                  </div>
+                  {memberContext.tracker && memberContext.tracker.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {memberContext.tracker.map((s: any) => (
+                        <span
+                          key={s.yearOrdinal}
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                            s.existingPayment?.status === "confirmed"
+                              ? "bg-status-successBackground text-status-successText border-status-successBorder"
+                              : "bg-surface-subtle text-text-tertiary border-neutrals-border"
+                          }`}
+                        >
+                          {s.yearLabel}: {s.existingPayment?.status === "confirmed" ? "Paid ✓" : "Unpaid"}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-text-tertiary">No required session tracker for non-student role.</p>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : (
             <>
@@ -332,11 +446,14 @@ export function ManualPaymentForm() {
               className="h-10 w-full rounded-lg border border-gray-200 bg-white dark:bg-prussian-blue-2 px-3 py-1.5 text-[13px] text-text-primary focus:border-brand-accent focus:outline-none"
             >
               <option value="">Select academic year...</option>
-              {DUES_YEARS.map((y) => (
-                <option key={y.value} value={y.value}>
-                  {y.label} — {formatNaira(y.total)}
-                </option>
-              ))}
+              {DUES_YEARS.map((y) => {
+                const status = checkYearOptionStatus(y.value, memberContext, selectedMember);
+                return (
+                  <option key={y.value} value={y.value} disabled={status.disabled}>
+                    {y.label} — {formatNaira(y.total)}{status.labelSuffix}
+                  </option>
+                );
+              })}
             </select>
             {selectedDuesInfo && (
               <p className="text-[11px] text-text-tertiary mt-1">

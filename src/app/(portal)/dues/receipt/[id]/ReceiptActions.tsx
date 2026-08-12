@@ -73,7 +73,7 @@ export function ReceiptActions({
           </Button>
           <Button
             onClick={handlePrint}
-            variant="outline"
+            variant="secondary"
             className="h-9 text-xs gap-2 font-semibold border-neutrals-borderLight"
           >
             <Printer className="h-4 w-4" /> Print Receipt

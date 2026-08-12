@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -286,9 +286,11 @@ export type Database = {
         Row: {
           amount: number
           channel: Database["public"]["Enums"]["payment_channel"]
+          checkout_url: string | null
           created_at: string | null
           dues_type: Database["public"]["Enums"]["dues_type"]
           gateway: string | null
+          gateway_reference: string | null
           gateway_response: Json | null
           id: string
           legacy_member_id: string | null
@@ -307,9 +309,11 @@ export type Database = {
         Insert: {
           amount: number
           channel: Database["public"]["Enums"]["payment_channel"]
+          checkout_url?: string | null
           created_at?: string | null
           dues_type?: Database["public"]["Enums"]["dues_type"]
           gateway?: string | null
+          gateway_reference?: string | null
           gateway_response?: Json | null
           id?: string
           legacy_member_id?: string | null
@@ -328,9 +332,11 @@ export type Database = {
         Update: {
           amount?: number
           channel?: Database["public"]["Enums"]["payment_channel"]
+          checkout_url?: string | null
           created_at?: string | null
           dues_type?: Database["public"]["Enums"]["dues_type"]
           gateway?: string | null
+          gateway_reference?: string | null
           gateway_response?: Json | null
           id?: string
           legacy_member_id?: string | null
@@ -508,7 +514,7 @@ export type Database = {
         | "Assistant Director of Hostel and Faculty Affairs"
         | "Ex-Officio Member"
       payment_channel: "online" | "manual"
-      payment_status: "pending" | "confirmed" | "failed" | "reversed"
+      payment_status: "pending" | "confirmed" | "failed" | "reversed" | "abandoned"
       user_role: "student" | "alumnus" | "exco" | "super_admin"
     }
     CompositeTypes: {
@@ -673,7 +679,7 @@ export const Constants = {
         "Ex-Officio Member",
       ],
       payment_channel: ["online", "manual"],
-      payment_status: ["pending", "confirmed", "failed", "reversed"],
+      payment_status: ["pending", "confirmed", "failed", "reversed", "abandoned"],
       user_role: ["student", "alumnus", "exco", "super_admin"],
     },
   },

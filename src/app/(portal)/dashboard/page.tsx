@@ -529,7 +529,7 @@ export default async function DashboardPage() {
                 <Link href="/events">All</Link>
               </Button>
             </CardHeader>
-            <CardContent className="p-6 pt-0 space-y-4">
+            <CardContent className="p-6 pt-2 space-y-4">
               <div className="flex flex-col gap-3">
                 {!dbEvents || dbEvents.length === 0 ? (
                   <p className="text-xs text-text-secondary py-4 text-center">No upcoming events scheduled.</p>

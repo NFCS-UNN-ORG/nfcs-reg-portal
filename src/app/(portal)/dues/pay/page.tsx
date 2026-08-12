@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { getMyPayments } from "@/lib/actions/payment.actions";
-import { initiateOPayPayment } from "@/lib/actions/opay.actions";
+import { initiatePaystackPayment } from "@/lib/actions/paystack.actions";
+import { initiateFlutterwavePayment } from "@/lib/actions/flutterwave.actions";
+import { getPaymentSettings } from "@/lib/actions/dues-config.actions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, CreditCard, ChevronLeft, Info } from "lucide-react";
+import { AlertCircle, CreditCard, ChevronLeft, Info, ShieldCheck } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
@@ -49,12 +51,25 @@ function PayDuesFormContent() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [payments, setPayments] = React.useState<PaymentRecord[]>([]);
   const [isPaymentsLoading, setIsPaymentsLoading] = React.useState(true);
+  const [activeGateway, setActiveGateway] = React.useState<"paystack" | "flutterwave">("paystack");
 
   React.useEffect(() => {
     if (profile?.role === "super_admin") {
       router.push("/dashboard");
     }
   }, [profile, router]);
+
+  React.useEffect(() => {
+    async function loadActiveGateway() {
+      const settings = await getPaymentSettings();
+      if (settings?.activeGateway) {
+        setActiveGateway(settings.activeGateway);
+      }
+    }
+    loadActiveGateway();
+  }, []);
+
+  const activeGatewayName = activeGateway === "flutterwave" ? "Flutterwave" : "Paystack";
 
   // Pre-fill from URL params (from tracker "Pay Now" button)
   const prefilledYear = searchParams.get("year");
@@ -210,12 +225,19 @@ function PayDuesFormContent() {
     setError(null);
 
     try {
-      const response = await initiateOPayPayment({
+      const settings = await getPaymentSettings();
+      const gatewayToUse = settings?.activeGateway || activeGateway;
+
+      const payload = {
         amount: parseMoneyAmount(values.amount),
         dues_type: values.dues_type,
         payment_period: values.payment_period,
         notes: values.notes,
-      });
+      };
+
+      const response = gatewayToUse === "flutterwave"
+        ? await initiateFlutterwavePayment(payload)
+        : await initiatePaystackPayment(payload);
 
       if (response?.error) {
         setError(response.error);
@@ -224,41 +246,20 @@ function PayDuesFormContent() {
           description: response.error,
           variant: "error",
         });
-        // If there's already a pending payment, offer to resume it
-        const pendingReference =
-          "pendingReference" in response ? response.pendingReference : null;
-        const cashierUrl = "cashierUrl" in response ? response.cashierUrl : null;
+      } else if (response?.checkoutUrl) {
+        toast({
+          title: "Order Initiated",
+          description: `Forwarding to secure ${activeGatewayName} checkout...`,
+          variant: "info",
+        });
 
-        if (pendingReference) {
-          toast({
-            title: "Resume Pending Payment",
-            description: "Redirecting you to your existing pending checkout...",
-            variant: "info",
-          });
-          if (cashierUrl) {
-            router.push(cashierUrl);
-          } else {
-            router.push(`/dues/pay/checkout?ref=${pendingReference}`);
-          }
+        if (response.isMock) {
+          router.push(`/dues/pay/checkout?ref=${response.reference}`);
+        } else {
+          window.location.href = response.checkoutUrl;
         }
       } else if (response?.reference) {
-        if (response.isMock) {
-          toast({
-            title: "Order Initiated",
-            description: "Forwarding you to the secure checkout sandbox...",
-            variant: "info",
-          });
-          router.push(`/dues/pay/checkout?ref=${response.reference}`);
-        } else if (response.cashierUrl) {
-          toast({
-            title: "Order Initiated",
-            description: "Forwarding you to OPay secure checkout...",
-            variant: "info",
-          });
-          router.push(response.cashierUrl);
-        } else {
-          router.push(`/dues/pay/checkout?ref=${response.reference}`);
-        }
+        router.push(`/dues/pay/checkout?ref=${response.reference}`);
       }
     } catch {
       setError("An unexpected error occurred. Please try again.");
@@ -300,13 +301,23 @@ function PayDuesFormContent() {
           Pay Levies & Dues
         </h1>
         <p className="text-xs text-text-secondary">
-          Initiate secure online card/bank transfer dues payments.
+          Initiate secure online card / bank transfer dues payments via {activeGatewayName}.
         </p>
       </div>
 
       {/* Card Wrapper */}
       <Card className="max-w-[560px] mx-auto border border-neutrals-borderLight shadow-card bg-white">
         <CardContent className="p-8">
+          {/* Active Gateway Badge */}
+          <div className="mb-4 flex items-center justify-between p-2.5 rounded-lg bg-surface-subtle border border-neutrals-border text-xs">
+            <span className="text-text-secondary font-medium flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4 text-brand" /> Secured by
+            </span>
+            <Badge variant="active" className="font-semibold">
+              {activeGatewayName}
+            </Badge>
+          </div>
+
           {/* Fee Breakdown Info Box (students only) */}
           {!userIsAlumnus && feeBreakdown && selectedIsRequired && (
             <div className="mb-6 rounded-lg bg-brand-light border border-brand-border p-4">
@@ -428,7 +439,7 @@ function PayDuesFormContent() {
               className="w-full gap-2 font-semibold h-11"
               isLoading={isLoading}
             >
-              <CreditCard className="h-4 w-4" /> Proceed to Secure Checkout
+              <CreditCard className="h-4 w-4" /> Proceed to {activeGatewayName} Checkout
             </Button>
           </form>
         </CardContent>

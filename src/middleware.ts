@@ -28,7 +28,7 @@ export async function middleware(request: NextRequest) {
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+    { 
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -76,8 +76,15 @@ export async function middleware(request: NextRequest) {
 
   // 5. Routing checks based on authentication state
   if (user) {
-    // Authenticated user going to public auth routes (including "/") -> redirect to dashboard
-    if (PUBLIC_ROUTES.some((r) => pathname === r)) {
+    const isEmailConfirmed = !!(user.email_confirmed_at || user.confirmed_at);
+
+    if (!isEmailConfirmed) {
+      console.log(`[Middleware] User email unconfirmed (${user.email}): signing out`);
+      await supabase.auth.signOut();
+      if (!PUBLIC_ROUTES.some((r) => pathname === r)) {
+        return redirectResponse("/login");
+      }
+    } else if (PUBLIC_ROUTES.some((r) => pathname === r)) {
       console.log(`[Middleware] Authenticated user on public route: redirecting to /dashboard`);
       return redirectResponse("/dashboard");
     }

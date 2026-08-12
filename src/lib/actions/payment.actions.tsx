@@ -9,7 +9,8 @@ import DuesReceipt from "../../../emails/DuesReceipt";
 import { parseMoneyAmount } from "@/lib/utils/money";
 import * as React from "react";
 import { createNotification } from "@/lib/actions/notification.actions";
-import { getLevelOrdinal, deriveSessionLabel, CURRENT_SESSION } from "@/lib/utils/fees";
+import { getLevelOrdinal, deriveSessionLabel, CURRENT_SESSION, buildPaymentTracker, isRequiredDuesType } from "@/lib/utils/fees";
+import { getYearsOfStudy, isAlumnus } from "@/lib/utils/unn-data";
 
 /** Fetch a single payment by reference — uses adminClient to bypass RLS join issues in checkout */
 export async function getPaymentByReference(reference: string) {
@@ -273,8 +274,133 @@ export async function failMockPayment(reference: string) {
   }
 }
 
+export async function getMemberPaymentContext(memberId: string) {
+  try {
+    const { data: profile } = await adminClient
+      .from("profiles")
+      .select("id, full_name, email, role, academic_level, faculty, department, matric_number")
+      .eq("id", memberId)
+      .maybeSingle();
+
+    let existingPayments: any[] = [];
+    let memberDetails: any = profile;
+
+    if (profile) {
+      const { data: payments } = await adminClient
+        .from("payments")
+        .select("id, dues_type, payment_period, status, amount, payment_reference, payment_date, created_at")
+        .eq("profile_id", memberId);
+      existingPayments = payments || [];
+    } else {
+      const { data: legacy } = await adminClient
+        .from("legacy_members")
+        .select("id, full_name, email, academic_level, matric_number")
+        .eq("id", memberId)
+        .maybeSingle();
+      if (legacy) {
+        memberDetails = { ...legacy, role: "student" };
+        const { data: payments } = await adminClient
+          .from("payments")
+          .select("id, dues_type, payment_period, status, amount, payment_reference, payment_date, created_at")
+          .eq("legacy_member_id", memberId);
+        existingPayments = payments || [];
+      }
+    }
+
+    if (!memberDetails) {
+      return { error: "Member record not found" };
+    }
+
+    const currentLevelOrdinal = getLevelOrdinal(memberDetails.academic_level);
+    const totalCourseYears = getYearsOfStudy(memberDetails.faculty, memberDetails.department);
+    const userIsAlumnus = isAlumnus(memberDetails.role);
+
+    const tracker = !userIsAlumnus
+      ? buildPaymentTracker({
+          currentLevelOrdinal,
+          totalCourseYears,
+          existingPayments: existingPayments.map((p) => ({
+            id: p.id,
+            dues_type: p.dues_type,
+            payment_period: p.payment_period,
+            status: p.status,
+            amount: Number(p.amount),
+            payment_reference: p.payment_reference,
+            payment_date: p.payment_date,
+            created_at: p.created_at,
+          })),
+          currentSession: CURRENT_SESSION,
+        })
+      : [];
+
+    return {
+      success: true,
+      member: memberDetails,
+      currentLevelOrdinal,
+      totalCourseYears,
+      userIsAlumnus,
+      tracker,
+      existingPayments,
+    };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to fetch member payment details" };
+  }
+}
+
 export async function recordManualPayment(values: ManualPaymentFormValues, excoId: string) {
   try {
+    // Perform strict validation rules for required dues (annual_dues & membership_levy)
+    if (isRequiredDuesType(values.dues_type)) {
+      const memberContext = await getMemberPaymentContext(values.member_id);
+      if (memberContext.error || !memberContext.member || !memberContext.tracker) {
+        return { error: memberContext.error || "Member context not found." };
+      }
+
+      const { currentLevelOrdinal = 0, userIsAlumnus = false, tracker = [] } = memberContext;
+
+      if (!userIsAlumnus && currentLevelOrdinal > 0) {
+        // Determine target year ordinal
+        let targetYearOrdinal = 1;
+        if (values.dues_type === "membership_levy") {
+          targetYearOrdinal = 1;
+        } else {
+          const matchedSession = tracker.find(
+            (s) => (values.payment_period && values.payment_period.startsWith(s.session)) || s.feeType === values.dues_type
+          );
+          if (matchedSession) {
+            targetYearOrdinal = matchedSession.yearOrdinal;
+          }
+        }
+
+        // Rule 3: Academic level bound check
+        if (targetYearOrdinal > currentLevelOrdinal) {
+          return {
+            error: `Cannot record payment for Year ${targetYearOrdinal}. Student is currently in ${memberContext.member.academic_level || "a lower level"} and has not entered this year yet.`,
+          };
+        }
+
+        // Find target session in tracker
+        const targetSession = tracker.find((s) => s.yearOrdinal === targetYearOrdinal);
+
+        // Rule 1: Already paid check
+        if (targetSession?.existingPayment?.status === "confirmed") {
+          return {
+            error: `Payment for ${targetSession.yearLabel} (${targetSession.session}) has already been paid and confirmed for this student.`,
+          };
+        }
+
+        // Rule 2: Sequential payment check
+        if (targetYearOrdinal > 1) {
+          const previousSession = tracker.find((s) => s.yearOrdinal === targetYearOrdinal - 1);
+          if (previousSession && previousSession.existingPayment?.status !== "confirmed") {
+            return {
+              error: `Sequential payment rule: Cannot record payment for ${targetSession?.yearLabel || `Year ${targetYearOrdinal}`} (${targetSession?.session || ""}) because Year ${targetYearOrdinal - 1} (${previousSession.session}) has not been paid yet.`,
+            };
+          }
+        }
+      }
+    }
+
     // Check if target is a legacy member or profile
     const supabase = await createClient();
     
@@ -399,7 +525,10 @@ export async function recordManualPayment(values: ManualPaymentFormValues, excoI
     }
 
     revalidatePath("/dues");
+    revalidatePath("/dashboard");
     revalidatePath("/admin/dues");
+    revalidatePath("/admin/members");
+    revalidatePath("/dues/history");
     return { success: true };
   } catch (err: any) {
     return { error: err?.message || "Failed to record manual payment" };

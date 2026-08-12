@@ -3,11 +3,8 @@
 import * as React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { confirmMockPayment, failMockPayment, getPaymentByReference } from "@/lib/actions/payment.actions";
-import {
-  expireStaleOPayCheckout,
-  resumeOPayCheckout,
-  syncOPayPaymentStatus,
-} from "@/lib/actions/opay.actions";
+import { verifyPaystackPayment } from "@/lib/actions/paystack.actions";
+import { verifyFlutterwavePayment } from "@/lib/actions/flutterwave.actions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -23,12 +20,12 @@ type CheckoutPayment = {
   status: string;
   profile_id: string;
   gateway: string | null;
-  opay_cashier_url: string | null;
+  checkout_url: string | null;
   mock_checkout_enabled?: boolean;
   full_name?: string | null;
 };
 
-function MockCheckoutContent() {
+function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
@@ -38,7 +35,7 @@ function MockCheckoutContent() {
   const [payment, setPayment] = React.useState<CheckoutPayment | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [opayContinueUrl, setOpayContinueUrl] = React.useState<string | null>(null);
+  const [continueUrl, setContinueUrl] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     async function loadPayment() {
@@ -49,74 +46,52 @@ function MockCheckoutContent() {
       }
 
       try {
-        // Use the server action (adminClient) to avoid RLS join issues
         const result = await getPaymentByReference(ref);
         if (result.error || !result.payment) {
           setError(result.error || "Payment transaction not found.");
           setIsLoading(false);
         } else {
-          const p = result.payment;
-          setPayment(p as unknown as CheckoutPayment);
+          const p = result.payment as unknown as CheckoutPayment;
+          setPayment(p);
 
           if (p.status === "confirmed") {
             router.push(`/dues/receipt/${p.id}`);
             return;
           }
 
-          if (p.gateway === "opay") {
-            const syncResult = await syncOPayPaymentStatus(p.payment_reference || ref);
-
+          if (p.gateway === "paystack") {
+            const syncResult = await verifyPaystackPayment(p.payment_reference || ref);
             if (syncResult.success && syncResult.status === "confirmed") {
               router.push(`/dues/receipt/${syncResult.paymentId || p.id}`);
               return;
             }
-
             if (syncResult.success && syncResult.status === "failed") {
-              setError("OPay marked this transaction as failed. Please start a fresh payment.");
+              setError("Paystack marked this payment as failed. Please try a new transaction.");
               setIsLoading(false);
               return;
             }
-
-            if (syncResult.error) {
-              setError(syncResult.error);
+            if (p.checkout_url) {
+              setContinueUrl(p.checkout_url);
+            }
+            setIsLoading(false);
+          } else if (p.gateway === "flutterwave") {
+            const syncResult = await verifyFlutterwavePayment(p.payment_reference || ref);
+            if (syncResult.success && syncResult.status === "confirmed") {
+              router.push(`/dues/receipt/${syncResult.paymentId || p.id}`);
+              return;
+            }
+            if (syncResult.success && syncResult.status === "failed") {
+              setError("Flutterwave marked this payment as failed. Please try a new transaction.");
               setIsLoading(false);
               return;
             }
-
-            const expireResult = await expireStaleOPayCheckout(p.payment_reference || ref);
-            if (expireResult.error) {
-              setError(expireResult.error);
-              setIsLoading(false);
-              return;
+            if (p.checkout_url) {
+              setContinueUrl(p.checkout_url);
             }
-
-            if (expireResult.expired) {
-              setError("This OPay checkout session has expired. The payment has been marked as failed. Please create a new payment.");
-              setIsLoading(false);
-              return;
-            }
-
-            if (p.opay_cashier_url) {
-              setOpayContinueUrl(p.opay_cashier_url);
-              setIsLoading(false);
-              return;
-            }
-
-            const resumeResult = await resumeOPayCheckout(p.payment_reference || ref);
-            if (resumeResult.success && resumeResult.cashierUrl) {
-              setOpayContinueUrl(resumeResult.cashierUrl);
-              setIsLoading(false);
-            } else {
-              setError(resumeResult.error || "OPay checkout link could not be recreated. Please start a fresh payment.");
-              setIsLoading(false);
-            }
-          } else if (p.gateway === "mock_gateway" && p.mock_checkout_enabled) {
             setIsLoading(false);
           } else if (p.gateway === "mock_gateway") {
-            setError("This old sandbox transaction can no longer be completed. Please start a fresh OPay payment.");
             setIsLoading(false);
           } else {
-            setError("This transaction cannot be completed from the sandbox checkout.");
             setIsLoading(false);
           }
         }
@@ -142,7 +117,7 @@ function MockCheckoutContent() {
       } else {
         toast({
           title: "Payment Confirmed",
-          description: "Online payment mock confirmed successfully!",
+          description: "Online payment confirmed successfully!",
           variant: "success",
         });
         router.push("/dues");
@@ -172,7 +147,7 @@ function MockCheckoutContent() {
       } else {
         toast({
           title: "Payment Failed",
-          description: "Online payment mock failed.",
+          description: "Online payment simulation failed.",
           variant: "error",
         });
         router.push("/dues");
@@ -192,7 +167,7 @@ function MockCheckoutContent() {
     return (
       <div className="min-h-[400px] flex flex-col items-center justify-center gap-2">
         <Loader2 className="h-8 w-8 text-brand animate-spin" />
-        <span className="text-xs text-text-secondary">Loading checkout gateway...</span>
+        <span className="text-xs text-text-secondary">Loading payment details...</span>
       </div>
     );
   }
@@ -205,7 +180,7 @@ function MockCheckoutContent() {
     return (
       <div className="min-h-[400px] flex flex-col items-center justify-center gap-3 text-center">
         <AlertTriangle className="h-10 w-10 text-danger" />
-        <h3 className="text-sm font-bold text-text-primary">Checkout Error</h3>
+        <h3 className="text-sm font-bold text-text-primary">Checkout Notice</h3>
         <p className="text-xs text-text-secondary max-w-xs">{error || "Payment not found."}</p>
         <div className="flex gap-2">
           {retryHref && (
@@ -221,18 +196,20 @@ function MockCheckoutContent() {
     );
   }
 
-  if (payment.gateway === "opay") {
+  if (payment.gateway === "paystack" || payment.gateway === "flutterwave") {
+    const gatewayLabel = payment.gateway === "flutterwave" ? "Flutterwave" : "Paystack";
+
     return (
       <div className="min-h-[400px] flex flex-col items-center justify-center gap-3 text-center">
-        <Loader2 className="h-8 w-8 text-brand" />
-        <h3 className="text-sm font-bold text-text-primary">Payment Still Processing</h3>
+        <Loader2 className="h-8 w-8 text-brand animate-spin" />
+        <h3 className="text-sm font-bold text-text-primary">Processing {gatewayLabel} Payment</h3>
         <p className="text-xs text-text-secondary max-w-xs">
-          We could not confirm this payment yet. If you have not completed checkout, continue with OPay.
+          If you have not completed checkout in the gateway window, click below to continue.
         </p>
         <div className="flex gap-2">
-          {opayContinueUrl && (
-            <Button onClick={() => (window.location.href = opayContinueUrl)} variant="primary" size="sm">
-              Continue to OPay
+          {continueUrl && (
+            <Button onClick={() => (window.location.href = continueUrl)} variant="primary" size="sm">
+              Continue to {gatewayLabel}
             </Button>
           )}
           <Button onClick={() => router.push("/dues")} variant="secondary" size="sm">
@@ -253,11 +230,11 @@ function MockCheckoutContent() {
           </div>
           <div className="z-10 flex flex-col gap-1.5">
             <span className="text-[10px] uppercase font-bold tracking-widest text-[#BBF7D0]">
-              Monnify/OPay Mock Sandbox
+              Paystack / Flutterwave Sandbox Simulation
             </span>
             <h2 className="text-lg font-bold">Secure Online Payment</h2>
             <p className="text-[11px] opacity-90">
-              Transaction reference: <span className="font-mono">{payment.payment_reference}</span>
+              Reference: <span className="font-mono">{payment.payment_reference}</span>
             </p>
           </div>
         </div>
@@ -292,11 +269,11 @@ function MockCheckoutContent() {
           <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-lg leading-relaxed flex gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-700" />
             <span>
-              This is a sandbox simulation page. No real money will be charged. Click below to simulate the bank response.
+              This is a sandbox testing mode. Click below to simulate instant payment confirmation or failure.
             </span>
           </div>
 
-          {/* Mock Action triggers */}
+          {/* Action triggers */}
           <div className="flex flex-col gap-2 pt-2">
             <Button
               onClick={handleSuccess}
@@ -331,17 +308,17 @@ function MockCheckoutContent() {
   );
 }
 
-export default function MockCheckoutPage() {
+export default function CheckoutPage() {
   return (
     <React.Suspense fallback={
       <div className="min-h-screen flex flex-col items-center justify-center bg-surface-page">
         <div className="min-h-[400px] flex flex-col items-center justify-center gap-2">
           <Loader2 className="h-8 w-8 text-brand animate-spin" />
-          <span className="text-xs text-text-secondary">Loading checkout simulation...</span>
+          <span className="text-xs text-text-secondary">Loading payment checkout...</span>
         </div>
       </div>
     }>
-      <MockCheckoutContent />
+      <CheckoutContent />
     </React.Suspense>
   );
 }

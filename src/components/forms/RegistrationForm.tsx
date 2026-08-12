@@ -7,6 +7,7 @@ import { signupSchema, type SignupFormValues } from "@/lib/validations/member.sc
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { registerMember } from "@/lib/actions/member.actions";
+import { resendConfirmationEmail } from "@/lib/actions/auth.actions";
 import {
   AlertCircle,
   CheckCircle,
@@ -17,7 +18,8 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  RefreshCw
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils/cn";
@@ -34,7 +36,9 @@ export function RegistrationForm() {
   const { toast } = useToast();
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const [registeredEmail, setRegisteredEmail] = React.useState<string>("");
   const [isLoading, setIsLoading] = React.useState(false);
+  const [isResending, setIsResending] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
   const [currentStep, setCurrentStep] = React.useState(0);
 
@@ -131,10 +135,11 @@ export function RegistrationForm() {
       const result = await registerMember(formData);
       console.log("[register/onSubmit] server action result:", result);
       if (result?.success === true) {
+        setRegisteredEmail(values.email);
         setSuccess(true);
         toast({
-          title: "Registration Submitted",
-          description: "Your registration is awaiting exco approval.",
+          title: "Account Created!",
+          description: "Please check your email to confirm your account.",
           variant: "success",
         });
       } else if (result?.error) {
@@ -159,21 +164,75 @@ export function RegistrationForm() {
     }
   };
 
+  const handleResendEmail = async () => {
+    if (!registeredEmail) return;
+    setIsResending(true);
+    try {
+      const res = await resendConfirmationEmail(registeredEmail);
+      if (res?.success) {
+        toast({
+          title: "Email Resent",
+          description: `A new confirmation link has been sent to ${registeredEmail}.`,
+          variant: "success",
+        });
+      } else {
+        toast({
+          title: "Resend Failed",
+          description: res?.error || "Could not resend confirmation email. Please try again.",
+          variant: "error",
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Resend Failed",
+        description: "An unexpected error occurred.",
+        variant: "error",
+      });
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   if (success) {
     return (
-      <div className="flex flex-col items-center text-center gap-6 py-12 px-6 bg-surface">
-        <div className="h-20 w-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center border border-emerald-100 shadow-sm animate-bounce">
-          <CheckCircle className="h-10 w-10" />
+      <div className="flex flex-col items-center justify-center text-center gap-6 py-10 px-6 bg-surface min-h-[385px] w-full animate-in fade-in duration-300">
+        <div className="size-16 rounded-2xl bg-brand/10 text-brand border border-brand/20 flex items-center justify-center shadow-sm">
+          <Mail className="size-8 text-brand" />
         </div>
-        <div className="space-y-3">
-          <h3 className="text-2xl font-bold text-text-primary tracking-tight">Registration Submitted!</h3>
-          <p className="text-sm text-text-secondary max-w-md leading-relaxed">
-            Thank you for registering. Your profile has been created with a <strong className="text-brand-orange">pending</strong> status. An Exco member will review your credentials and approve your account shortly.
+
+        <div className="space-y-3 max-w-md">
+          <h3 className="text-xl font-bold text-text-primary tracking-tight">
+            Verify Your Email Address
+          </h3>
+          <p className="text-xs text-text-secondary leading-relaxed">
+            A confirmation link has been sent to{" "}
+            <span className="font-semibold text-text-primary">{registeredEmail}</span>. Please click the link in your email to activate your account.
+          </p>
+          <p className="text-[11px] text-text-tertiary leading-relaxed pt-1">
+            Note: After verifying your email, your profile will be reviewed by an Exco administrator for account activation.
           </p>
         </div>
-        <Button asChild variant="primary" className="mt-4 px-8 py-2.5 h-auto text-sm font-semibold rounded-xl bg-brand hover:bg-brand-accent transition-colors shadow-lg">
-          <a href="/login">Go to Login</a>
-        </Button>
+
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-2 w-full max-w-xs select-none">
+          <Button
+            asChild
+            variant="primary"
+            className="w-full sm:w-auto px-6 h-9 text-xs font-semibold rounded-lg bg-brand hover:bg-brand-accent transition-colors shadow-sm"
+          >
+            <a href="/login">Continue to Sign In</a>
+          </Button>
+
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleResendEmail}
+            isLoading={isResending}
+            className="w-full sm:w-auto px-4 h-9 text-xs font-semibold rounded-lg gap-1.5"
+          >
+            <RefreshCw className="size-3.5" />
+            Resend Email
+          </Button>
+        </div>
       </div>
     );
   }
@@ -252,9 +311,9 @@ export function RegistrationForm() {
       </div>
 
       {/* Form Content Panel */}
-      <div className="flex-1 p-6 md:p-8 flex flex-col justify-between min-h-[385px]">
+      <div className="flex-1 p-6 md:p-8 flex flex-col justify-between min-h-[385px] w-full">
         {/* Mobile Progress bar tracker (hidden on desktop) */}
-        <div className="md:hidden space-y-2 mb-6">
+        <div className="md:hidden space-y-2 mb-4">
           <div className="flex justify-between items-center text-xs font-bold text-text-secondary select-none">
             <span>Step {currentStep + 1} of {STEPS.length}</span>
             <span className="text-brand">{STEPS[currentStep].name}</span>
@@ -267,8 +326,8 @@ export function RegistrationForm() {
           </div>
         </div>
 
-        <form onSubmit={onFormSubmit} className="space-y-5 flex-1 flex flex-col justify-end">
-          <div className="space-y-5">
+        <form onSubmit={onFormSubmit} className="flex-1 flex flex-col justify-between w-full">
+          <div className="my-auto w-full space-y-5 py-4">
             {error && (
               <div className="flex items-center gap-2.5 rounded-xl bg-status-errorBackground p-3.5 text-xs font-medium text-status-errorText border border-status-errorBorder animate-in fade-in duration-200">
                 <AlertCircle className="h-4 w-4 shrink-0" />
@@ -276,7 +335,7 @@ export function RegistrationForm() {
               </div>
             )}
 
-            <div className="min-h-[160px] flex flex-col justify-self-end">
+            <div className="min-h-[160px] flex flex-col justify-center w-full">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={currentStep}
@@ -284,7 +343,7 @@ export function RegistrationForm() {
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: -15, opacity: 0 }}
                   transition={{ duration: 0.15 }}
-                  className="space-y-4"
+                  className="space-y-4 w-full"
                 >
                   <div>
                     <h3 className="text-base font-bold text-text-primary tracking-tight">

@@ -318,7 +318,7 @@ export function RegisteredMembersTable({
                   {/* Assigned Organ */}
                   <TableCell variant="secondary">
                     <span className="capitalize">
-                      {member.organ ? member.organ.replace("_", " ") : "Not assigned"}
+                      {member.organ ? member.organ.replace(/_/g, " ") : "Not assigned"}
                     </span>
                   </TableCell>
 
@@ -327,11 +327,20 @@ export function RegisteredMembersTable({
 
                   {/* Status & Role Badges */}
                   <TableCell>
-                    <div className="flex flex-wrap gap-1.5">
-                      <Badge variant={getStatusBadgeVariant(member.status)}>{member.status}</Badge>
-                      <Badge variant={getRoleBadgeVariant(member.role)}>{member.role}</Badge>
+                    <div className="flex flex-col gap-1.5 items-start min-w-[140px]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge variant={getStatusBadgeVariant(member.status)} className="capitalize">
+                          {member.status}
+                        </Badge>
+                        <Badge variant={getRoleBadgeVariant(member.role)}>
+                          {member.role === "super_admin" ? "Super Admin" : member.role === "exco" ? "Exco" : member.role === "alumnus" ? "Alumnus" : "Student"}
+                        </Badge>
+                      </div>
                       {member.role === "exco" && member.position && (
-                        <span className="text-[10px] font-semibold text-brand-accent bg-brand-light px-2 py-0.5 rounded-full border border-brand-border">
+                        <span
+                          className="inline-block text-[11px] font-medium text-brand-accent dark:text-purple-300 bg-brand-light/60 dark:bg-purple-950/40 px-2.5 py-0.5 rounded-md border border-brand-border/50 dark:border-purple-800/50 max-w-[200px] truncate"
+                          title={member.position}
+                        >
                           {member.position}
                         </span>
                       )}

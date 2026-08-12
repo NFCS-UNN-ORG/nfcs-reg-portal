@@ -89,9 +89,9 @@ export default function ForgotPasswordPage() {
               <div className="flex flex-col items-center text-center gap-3 p-4 rounded-xl bg-status-successBackground border border-status-successBorder text-status-successText">
                 <CheckCircle2 className="h-8 w-8 text-status-successText" />
                 <div className="space-y-1">
-                  <h3 className="text-xs font-bold">Email Sent</h3>
+                  <h3 className="text-xs font-bold">Request Processed</h3>
                   <p className="text-[11px] leading-relaxed opacity-95">
-                    We have sent a password reset link to your email inbox. Please check your spam folder if you do not receive it shortly.
+                    If an account exists for this email, a password reset link has been sent. Check your inbox (and spam folder).
                   </p>
                 </div>
               </div>
