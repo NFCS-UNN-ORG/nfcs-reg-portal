@@ -123,7 +123,20 @@ export function LoginForm() {
       <Button type="submit" variant="primary" className="w-full mt-2" isLoading={isLoading}>
         Sign In to Portal
       </Button>
+
+      <p className="text-center text-[10px] text-text-tertiary pt-1">
+        By signing in, you agree to our{" "}
+        <Link href="/terms" className="text-brand font-medium hover:underline">
+          Terms
+        </Link>{" "}
+        &amp;{" "}
+        <Link href="/privacy" className="text-brand font-medium hover:underline">
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </form>
   );
 }
+
 

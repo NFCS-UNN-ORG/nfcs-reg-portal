@@ -1,4 +1,5 @@
 import * as React from "react";
+import Link from "next/link";
 import { AuthContainer } from "@/components/auth/AuthContainer";
 
 export default function RegisterPage() {
@@ -23,10 +24,16 @@ export default function RegisterPage() {
         <AuthContainer initialTab="register" />
 
         {/* Footer info */}
-        <p className="text-center text-[10px] text-text-tertiary">
-          &copy; {new Date().getFullYear()} NFCS UNN. All rights reserved.
-        </p>
+        <div className="flex flex-col items-center gap-1.5 text-center text-[11px] text-text-tertiary">
+          <p>&copy; {new Date().getFullYear()} NFCS UNN. All rights reserved.</p>
+          <div className="flex items-center gap-3">
+            <Link href="/terms" className="hover:text-brand transition-colors font-medium">Terms of Service</Link>
+            <span>•</span>
+            <Link href="/privacy" className="hover:text-brand transition-colors font-medium">Privacy Policy</Link>
+          </div>
+        </div>
       </div>
     </main>
   );
 }
+

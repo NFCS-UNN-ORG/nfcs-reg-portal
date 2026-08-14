@@ -24,6 +24,8 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils/cn";
 import { motion, AnimatePresence } from "motion/react";
+import Link from "next/link";
+
 
 const STEPS = [
   { id: "full_name", name: "Full Name", description: "Who are you?", placeholder: "John Doe" },
@@ -526,8 +528,23 @@ export function RegistrationForm() {
               </Button>
             )}
           </div>
+
+          {currentStep === STEPS.length - 1 && (
+            <p className="text-center text-[10px] text-text-tertiary pt-3 border-t border-border mt-3 select-none">
+              By creating an account, you agree to our{" "}
+              <Link href="/terms" target="_blank" className="text-brand font-medium hover:underline">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" target="_blank" className="text-brand font-medium hover:underline">
+                Privacy Policy
+              </Link>
+              .
+            </p>
+          )}
         </form>
       </div>
     </div>
   );
 }
+

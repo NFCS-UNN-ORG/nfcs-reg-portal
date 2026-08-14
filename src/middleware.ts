@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database.types";
 
-const PUBLIC_ROUTES = ["/", "/login", "/register", "/forgot-password", "/reset-password"];
+const AUTH_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password"];
+const PUBLIC_ROUTES = ["/", ...AUTH_ROUTES, "/privacy", "/terms"];
 const CLAIM_ROUTE = "/claim-account";
 
 export async function middleware(request: NextRequest) {
@@ -84,10 +85,11 @@ export async function middleware(request: NextRequest) {
       if (!PUBLIC_ROUTES.some((r) => pathname === r)) {
         return redirectResponse("/login");
       }
-    } else if (PUBLIC_ROUTES.some((r) => pathname === r)) {
-      console.log(`[Middleware] Authenticated user on public route: redirecting to /dashboard`);
+    } else if (AUTH_ROUTES.some((r) => pathname === r)) {
+      console.log(`[Middleware] Authenticated user on auth route: redirecting to /dashboard`);
       return redirectResponse("/dashboard");
     }
+
 
     // Check role restrictions for /admin routes
     if (pathname.startsWith("/admin")) {
