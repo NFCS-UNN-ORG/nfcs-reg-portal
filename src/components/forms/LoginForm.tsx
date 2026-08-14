@@ -10,6 +10,8 @@ import { login } from "@/lib/actions/auth.actions";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
+
 
 export function LoginForm() {
   const router = useRouter();
@@ -124,7 +126,22 @@ export function LoginForm() {
         Sign In to Portal
       </Button>
 
-      <p className="text-center text-[10px] text-text-tertiary pt-1">
+      {/* Divider */}
+      <div className="relative my-3">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-neutrals-borderLight" />
+        </div>
+        <div className="relative flex justify-center text-[10px] uppercase tracking-wider">
+          <span className="bg-surface px-3 text-text-tertiary font-semibold select-none">
+            or continue with
+          </span>
+        </div>
+      </div>
+
+      {/* Google Sign In */}
+      <GoogleSignInButton label="Continue with Google" />
+
+      <p className="text-center text-[10px] text-text-tertiary pt-2">
         By signing in, you agree to our{" "}
         <Link href="/terms" className="text-brand font-medium hover:underline">
           Terms
@@ -138,5 +155,6 @@ export function LoginForm() {
     </form>
   );
 }
+
 
 

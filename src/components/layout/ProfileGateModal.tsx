@@ -41,11 +41,13 @@ export function ProfileGateModal() {
 
   // Find which fields are missing for a helpful message
   const missing: string[] = [];
+  if (!profile.matric_number) missing.push("Matriculation Number");
   if (!profile.faculty) missing.push("Faculty");
   if (!profile.department) missing.push("Department");
   if (!profile.academic_level) missing.push("Academic Level");
   if (!profile.phone) missing.push("Phone Number");
   if (!profile.date_of_birth) missing.push("Date of Birth");
+
 
   return (
     <Dialog open modal>

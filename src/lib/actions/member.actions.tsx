@@ -565,6 +565,7 @@ export async function updateProfile(formData: FormData, userId: string) {
     const faculty = formData.get("faculty") as string || null;
     const department = formData.get("department") as string || null;
     const academic_level = formData.get("academic_level") as string || null;
+    const matric_number = formData.get("matric_number") as string || null;
     const organ = formData.get("organ") as any || null;
     const passportPhotoFile = formData.get("passport_photo") as File | null;
 
@@ -590,9 +591,14 @@ export async function updateProfile(formData: FormData, userId: string) {
       organ,
     };
 
+    if (matric_number) {
+      updateData.matric_number = matric_number;
+    }
+
     if (passport_photo_url) {
       updateData.passport_photo_url = passport_photo_url;
     }
+
 
     const { error } = await adminClient
       .from("profiles")

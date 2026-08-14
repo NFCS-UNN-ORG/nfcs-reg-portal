@@ -152,6 +152,7 @@ export function isProfileComplete(profile: {
   academic_level?: string | null;
   phone?: string | null;
   date_of_birth?: string | null;
+  matric_number?: string | null;
 } | null): boolean {
   if (!profile) return false;
   return !!(
@@ -159,9 +160,11 @@ export function isProfileComplete(profile: {
     profile.department &&
     profile.academic_level &&
     profile.phone &&
-    profile.date_of_birth
+    profile.date_of_birth &&
+    profile.matric_number
   );
 }
+
 
 export const UNN_HOSTELS = [
   "Alvan Ikoku Hostel",

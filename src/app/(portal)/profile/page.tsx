@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { Select } from "@/components/ui/select";
 import { ORGANS } from "@/lib/validations/member.schema";
 import { UNN_CAMPUS_DATA, UNN_HOSTELS, NFCS_SOCIETIES } from "@/lib/utils/unn-data";
+import { cn } from "@/lib/utils/cn";
 import {
   User,
   Mail,
@@ -27,8 +28,10 @@ import {
   ShieldCheck,
   Check,
   Loader2,
-  IdCard
+  IdCard,
+  Lock,
 } from "lucide-react";
+
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -436,7 +439,39 @@ export default function ProfilePage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Matriculation Number */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-text-secondary">Matriculation Number</label>
+                      {profile.matric_number ? (
+                        <span className="text-[10px] text-text-tertiary font-normal flex items-center gap-1">
+                          <Lock className="h-3 w-3" /> Locked
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-600 font-semibold">
+                          Required for verification
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
+                      <Input
+                        name="matric_number"
+                        placeholder="e.g. 2019/123456"
+                        defaultValue={profile.matric_number || ""}
+                        disabled={isLoading || !!profile.matric_number}
+                        readOnly={!!profile.matric_number}
+                        className={cn(
+                          "pl-9 text-xs",
+                          !!profile.matric_number && "bg-surface-subtle opacity-75 cursor-not-allowed"
+                        )}
+                        required={!profile.matric_number}
+                      />
+                    </div>
+                  </div>
                 </div>
+
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {/* Catholic Society */}

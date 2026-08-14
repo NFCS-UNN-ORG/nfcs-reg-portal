@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { ToastProvider } from "@/components/ui/toast";
 import "./globals.css";
 
@@ -18,8 +19,13 @@ export default function RootLayout({
         <ToastProvider>
           {children}
         </ToastProvider>
+
+        {/* Google Identity Services Script */}
+        <Script
+          src="https://accounts.google.com/gsi/client"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );
 }
-
