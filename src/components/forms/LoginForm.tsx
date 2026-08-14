@@ -127,7 +127,7 @@ export function LoginForm() {
       </Button>
 
       {/* Divider */}
-      <div className="relative my-3">
+      <div className="relative my-0">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-neutrals-borderLight" />
         </div>
