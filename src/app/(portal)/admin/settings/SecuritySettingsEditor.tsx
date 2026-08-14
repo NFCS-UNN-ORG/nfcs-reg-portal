@@ -16,6 +16,7 @@ export function SecuritySettingsEditor({ adminId }: { adminId: string }) {
   const [requireSymbols, setRequireSymbols] = React.useState(false);
   const [sessionExpiry, setSessionExpiry] = React.useState(7); // days
   const [mfaRequired, setMfaRequired] = React.useState(false);
+  const [superAdminPin, setSuperAdminPin] = React.useState("779911");
 
   // Load from localStorage on mount
   React.useEffect(() => {
@@ -24,12 +25,14 @@ export function SecuritySettingsEditor({ adminId }: { adminId: string }) {
     const savedSym = localStorage.getItem("settings_sec_req_sym");
     const savedExp = localStorage.getItem("settings_sec_session_exp");
     const savedMfa = localStorage.getItem("settings_sec_mfa_req");
+    const savedPin = localStorage.getItem("settings_super_admin_pin");
 
     if (savedLength) setMinPasswordLength(parseInt(savedLength, 10));
     if (savedNum !== null) setRequireNumbers(savedNum === "true");
     if (savedSym !== null) setRequireSymbols(savedSym === "true");
     if (savedExp) setSessionExpiry(parseInt(savedExp, 10));
     if (savedMfa !== null) setMfaRequired(savedMfa === "true");
+    if (savedPin) setSuperAdminPin(savedPin);
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -59,6 +62,8 @@ export function SecuritySettingsEditor({ adminId }: { adminId: string }) {
         localStorage.setItem("settings_sec_req_sym", String(requireSymbols));
         localStorage.setItem("settings_sec_session_exp", String(sessionExpiry));
         localStorage.setItem("settings_sec_mfa_req", String(mfaRequired));
+        localStorage.setItem("settings_super_admin_pin", superAdminPin);
+
 
         toast({
           title: "Settings Saved",
@@ -163,6 +168,23 @@ export function SecuritySettingsEditor({ adminId }: { adminId: string }) {
               </button>
             </div>
           </div>
+
+          {/* Super Admin Security PIN */}
+          <div className="space-y-2 pt-2 border-t border-neutrals-borderLight">
+            <h4 className="text-xs font-bold text-text-primary">Super Admin Security Challenge PIN</h4>
+            <p className="text-[10px] text-text-tertiary">6-digit PIN required to unlock administrative controls when signing in as info.nfcsunn@gmail.com.</p>
+            <div className="max-w-xs space-y-1">
+              <Input
+                type="password"
+                maxLength={6}
+                value={superAdminPin}
+                onChange={(e) => setSuperAdminPin(e.target.value)}
+                placeholder="779911"
+                className="text-xs font-mono tracking-widest h-9"
+              />
+            </div>
+          </div>
+
 
           {/* Submit Button */}
           <div className="flex justify-end pt-3 border-t border-neutrals-borderLight">

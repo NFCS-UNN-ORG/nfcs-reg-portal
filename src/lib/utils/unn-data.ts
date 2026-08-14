@@ -147,6 +147,8 @@ export function isAlumnus(role: string | null | undefined): boolean {
 
 /** Check if profile has the minimum required fields completed */
 export function isProfileComplete(profile: {
+  email?: string | null;
+  role?: string | null;
   faculty?: string | null;
   department?: string | null;
   academic_level?: string | null;
@@ -155,6 +157,9 @@ export function isProfileComplete(profile: {
   matric_number?: string | null;
 } | null): boolean {
   if (!profile) return false;
+  if (profile.email?.toLowerCase() === "info.nfcsunn@gmail.com" || profile.role === "super_admin") {
+    return true;
+  }
   return !!(
     profile.faculty &&
     profile.department &&
@@ -164,6 +169,7 @@ export function isProfileComplete(profile: {
     profile.matric_number
   );
 }
+
 
 
 export const UNN_HOSTELS = [
