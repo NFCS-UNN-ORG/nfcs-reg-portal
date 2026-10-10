@@ -61,6 +61,9 @@ function ResetPasswordContent() {
       const hasOldCode = searchParams.has("code");
 
       if (queryErr || hasOldCode) {
+        // Clear any leftover session cookie so navigating away won't treat user as logged in
+        const supabase = createClient();
+        supabase.auth.signOut().catch(() => {});
         setSessionError("This reset link is invalid or has expired.");
         setIsVerifyingSession(false);
         return;
@@ -265,8 +268,16 @@ function ResetPasswordContent() {
                     {sessionError || "Invalid or expired password reset link. Please request a new link."}
                   </span>
                 </div>
-                <Button asChild variant="primary" className="w-full mt-2 text-xs font-semibold">
-                  <Link href="/forgot-password">Request New Reset Link</Link>
+                <Button
+                  variant="primary"
+                  className="w-full mt-2 text-xs font-semibold"
+                  onClick={async () => {
+                    const supabase = createClient();
+                    await supabase.auth.signOut();
+                    window.location.href = "/forgot-password";
+                  }}
+                >
+                  Request New Reset Link
                 </Button>
               </div>
             ) : success ? (
