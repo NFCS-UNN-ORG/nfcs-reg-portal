@@ -169,7 +169,7 @@ export type Database = {
           migrated_by: string | null
           migration_source: Database["public"]["Enums"]["migration_source"]
           notes: string | null
-          organ: Database["public"]["Enums"]["organ_type"] | null
+          organ: string | null
           parish: string | null
           phone: string | null
           position: string | null
@@ -196,7 +196,7 @@ export type Database = {
           migrated_by?: string | null
           migration_source: Database["public"]["Enums"]["migration_source"]
           notes?: string | null
-          organ?: Database["public"]["Enums"]["organ_type"] | null
+          organ?: string | null
           parish?: string | null
           phone?: string | null
           position?: string | null
@@ -223,7 +223,7 @@ export type Database = {
           migrated_by?: string | null
           migration_source?: Database["public"]["Enums"]["migration_source"]
           notes?: string | null
-          organ?: Database["public"]["Enums"]["organ_type"] | null
+          organ?: string | null
           parish?: string | null
           phone?: string | null
           position?: string | null
@@ -393,7 +393,7 @@ export type Database = {
           is_legacy: boolean | null
           legacy_id: string | null
           matric_number: string | null
-          organ: Database["public"]["Enums"]["organ_type"] | null
+          organ: string | null
           parish: string | null
           passport_photo_url: string | null
           phone: string | null
@@ -419,7 +419,7 @@ export type Database = {
           is_legacy?: boolean | null
           legacy_id?: string | null
           matric_number?: string | null
-          organ?: Database["public"]["Enums"]["organ_type"] | null
+          organ?: string | null
           parish?: string | null
           passport_photo_url?: string | null
           phone?: string | null
@@ -445,7 +445,7 @@ export type Database = {
           is_legacy?: boolean | null
           legacy_id?: string | null
           matric_number?: string | null
-          organ?: Database["public"]["Enums"]["organ_type"] | null
+          organ?: string | null
           parish?: string | null
           passport_photo_url?: string | null
           phone?: string | null

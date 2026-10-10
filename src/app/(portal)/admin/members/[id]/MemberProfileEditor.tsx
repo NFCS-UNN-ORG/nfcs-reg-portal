@@ -8,7 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { updateMemberBiodata, sendPasswordReset, updateExcoPosition } from "@/lib/actions/member.actions";
 import { useToast } from "@/components/ui/toast";
 import { UNN_CAMPUS_DATA, EXCO_POSITIONS, NFCS_SOCIETIES } from "@/lib/utils/unn-data";
-import { Award } from "lucide-react";
+import { ORGANS } from "@/lib/validations/member.schema";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Award, Search, X } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 
 export function MemberProfileEditor({ member, adminId }: { member: any; adminId: string }) {
   const { toast } = useToast();
@@ -19,8 +22,34 @@ export function MemberProfileEditor({ member, adminId }: { member: any; adminId:
   // Faculty & Department State
   const [selectedFaculty, setSelectedFaculty] = React.useState(member.faculty || "");
   const [selectedDepartment, setSelectedDepartment] = React.useState(member.department || "");
-  const [selectedSociety, setSelectedSociety] = React.useState(member.society || "");
   const [selectedPosition, setSelectedPosition] = React.useState(member.position || "");
+
+  // Multiple selection states for Organ and Society
+  const [selectedOrgans, setSelectedOrgans] = React.useState<string[]>(
+    member.organ ? member.organ.split(",").map((s: string) => s.trim()).filter(Boolean) : []
+  );
+  const [selectedSocieties, setSelectedSocieties] = React.useState<string[]>(
+    member.society ? member.society.split(",").map((s: string) => s.trim()).filter(Boolean) : []
+  );
+  const [societySearch, setSocietySearch] = React.useState("");
+
+  const toggleOrgan = (o: string) => {
+    setSelectedOrgans((prev) =>
+      prev.includes(o) ? prev.filter((item) => item !== o) : [...prev, o]
+    );
+  };
+
+  const toggleSociety = (soc: string) => {
+    setSelectedSocieties((prev) =>
+      prev.includes(soc) ? prev.filter((item) => item !== soc) : [...prev, soc]
+    );
+  };
+
+  const filteredSocieties = React.useMemo(() => {
+    const list = Array.from(new Set([...selectedSocieties, ...NFCS_SOCIETIES]));
+    if (!societySearch.trim()) return list;
+    return list.filter((s) => s.toLowerCase().includes(societySearch.toLowerCase()));
+  }, [selectedSocieties, societySearch]);
 
   const faculties = Object.keys(UNN_CAMPUS_DATA);
   const departments: string[] = selectedFaculty ? (UNN_CAMPUS_DATA[selectedFaculty] || []) : [];
@@ -38,7 +67,14 @@ export function MemberProfileEditor({ member, adminId }: { member: any; adminId:
     const formData = new FormData(e.currentTarget);
     formData.set("faculty", selectedFaculty);
     formData.set("department", selectedDepartment);
-    formData.set("society", selectedSociety);
+    formData.delete("organ");
+    formData.delete("society");
+    if (selectedOrgans.length > 0) {
+      formData.set("organ", selectedOrgans.join(", "));
+    }
+    if (selectedSocieties.length > 0) {
+      formData.set("society", selectedSocieties.join(", "));
+    }
     if (isExcoRole) {
       formData.set("position", selectedPosition);
     }
@@ -178,9 +214,14 @@ export function MemberProfileEditor({ member, adminId }: { member: any; adminId:
           </CardHeader>
           <CardContent className="p-6 pt-0 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1">
-              <span className="text-[10px] text-text-tertiary uppercase font-semibold">Assigned Organ</span>
+              <span className="text-[10px] text-text-tertiary uppercase font-semibold">Assigned Organ(s)</span>
               <p className="text-sm font-medium text-text-primary capitalize">
-                {member.organ ? member.organ.replace("_", " ") : "Not assigned"}
+                {member.organ
+                  ? member.organ
+                      .split(",")
+                      .map((o: string) => o.trim().replace(/_/g, " "))
+                      .join(", ")
+                  : "Not assigned"}
               </p>
             </div>
             <div className="space-y-1">
@@ -279,36 +320,98 @@ export function MemberProfileEditor({ member, adminId }: { member: any; adminId:
               </Select>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-text-secondary select-none">Organ:</span>
-              <select
-                name="organ"
-                defaultValue={member.organ || ""}
-                className="h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-prussian-blue-2 px-2 py-1 text-xs text-text-primary focus:border-brand-accent focus:outline-none"
-              >
-                <option value="all">All Organs</option>
-                <option value="gospel_band">Gospel Band</option>
-                <option value="evangelical_committee">Evangelical Committee</option>
-                <option value="federation_theater">Federation Theater</option>
-                <option value="social_communications_commission">Social Communication Commission</option>
-                <option value="decency_and_disciplinary_committee">Decency & Disciplinary Committee</option>
-              </select>
+            <div className="space-y-2 sm:col-span-2">
+              <label className="text-xs font-semibold text-text-primary">
+                Scope Organ(s) ({selectedOrgans.length} selected)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 border border-neutrals-borderLight rounded-lg bg-surface">
+                {ORGANS.map((o) => {
+                  const isChecked = selectedOrgans.includes(o);
+                  return (
+                    <div
+                      key={o}
+                      onClick={() => toggleOrgan(o)}
+                      className={cn(
+                        "flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors text-xs",
+                        isChecked ? "bg-brand-light text-brand-accent font-medium" : "hover:bg-surface-subtle"
+                      )}
+                    >
+                      <Checkbox
+                        id={`admin-organ-${o}`}
+                        checked={isChecked}
+                        onChange={() => toggleOrgan(o)}
+                        className="pointer-events-none"
+                      />
+                      <span className="capitalize">{o.replace(/_/g, " ")}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Society dropdown from NFCS_SOCIETIES */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-text-primary">Society / Association</label>
-              <Select value={selectedSociety} onValueChange={setSelectedSociety}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select society..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— None —</SelectItem>
-                  {NFCS_SOCIETIES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+            {/* Society checkboxes from NFCS_SOCIETIES */}
+            <div className="space-y-2 sm:col-span-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-text-primary">
+                  Society / Association ({selectedSocieties.length} selected)
+                </label>
+              </div>
+
+              {/* Selected Badges */}
+              {selectedSocieties.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-surface-subtle border border-neutrals-borderLight">
+                  {selectedSocieties.map((soc) => (
+                    <span
+                      key={soc}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-brand-light text-brand-accent border border-brand-border"
+                    >
+                      <span>{soc}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleSociety(soc)}
+                        className="hover:text-danger focus:outline-none"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
+
+              <div className="border border-neutrals-borderLight rounded-lg p-2 bg-surface space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-tertiary pointer-events-none" />
+                  <Input
+                    placeholder="Search society..."
+                    value={societySearch}
+                    onChange={(e) => setSocietySearch(e.target.value)}
+                    className="pl-8 text-xs h-8"
+                  />
+                </div>
+                <div className="max-h-44 overflow-y-auto space-y-1 pr-1 divide-y divide-neutrals-borderLight/30">
+                  {filteredSocieties.map((s) => {
+                    const isChecked = selectedSocieties.includes(s);
+                    return (
+                      <div
+                        key={s}
+                        onClick={() => toggleSociety(s)}
+                        className={cn(
+                          "flex items-center p-1.5 rounded cursor-pointer transition-colors text-xs pt-1.5",
+                          isChecked ? "bg-brand-light/40 text-brand-accent font-medium" : "hover:bg-surface-subtle"
+                        )}
+                      >
+                        <Checkbox
+                          id={`admin-society-${s.replace(/\s+/g, "-")}`}
+                          checked={isChecked}
+                          onChange={() => toggleSociety(s)}
+                          label={s}
+                          className="pointer-events-none"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">

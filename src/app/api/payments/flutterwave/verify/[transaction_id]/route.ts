@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { verifyFlutterwavePayment } from "@/lib/actions/flutterwave.actions";
+import { getAppUrl } from "@/lib/utils/app-url";
 
 export async function GET(
   req: Request,
   { params }: { params: { transaction_id: string } },
 ) {
   const transactionId = params.transaction_id;
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  const appUrl = getAppUrl();
 
   if (!transactionId) {
     return NextResponse.redirect(`${appUrl}/dues?error=missing_transaction_id`);

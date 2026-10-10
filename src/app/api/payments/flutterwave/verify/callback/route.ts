@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { verifyFlutterwavePayment } from "@/lib/actions/flutterwave.actions";
+import { getAppUrl } from "@/lib/utils/app-url";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const transactionId = searchParams.get("transaction_id");
   const txRef = searchParams.get("tx_ref");
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  const appUrl = getAppUrl();
 
   const refToVerify = transactionId || txRef;
 

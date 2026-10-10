@@ -273,9 +273,14 @@ export default async function MemberDetailPage({ params }: PageProps) {
                 </div>
                 <CardContent className="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1">
-                    <span className="text-[10px] text-text-tertiary uppercase font-semibold">Assigned Organ</span>
+                    <span className="text-[10px] text-text-tertiary uppercase font-semibold">Assigned Organ(s)</span>
                     <p className="text-sm font-medium text-text-primary capitalize">
-                      {member.organ ? member.organ.replace("_", " ") : "Not assigned"}
+                      {member.organ
+                        ? member.organ
+                            .split(",")
+                            .map((o: string) => o.trim().replace(/_/g, " "))
+                            .join(", ")
+                        : "Not assigned"}
                     </p>
                   </div>
                   <div className="space-y-1">

@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { sendEmail } from "@/lib/email";
 import ClaimAccountInvite from "../../../emails/ClaimAccountInvite";
 import { parseMoneyAmount } from "@/lib/utils/money";
+import { getAppUrl } from "@/lib/utils/app-url";
 import * as React from "react";
 
 // Manual migrate single member
@@ -214,7 +215,8 @@ export async function sendClaimInvite(legacyMemberId: string, excoId: string) {
     });
 
     // Return the claim URL so we can log it or display it (mock email fallback)
-    const claimUrl = `${process.env.NEXT_PUBLIC_APP_URL}/claim-account?token=${claim_token}`;
+    const appUrl = getAppUrl();
+    const claimUrl = `${appUrl}/claim-account?token=${claim_token}`;
 
     // Send ClaimAccountInvite email
     try {

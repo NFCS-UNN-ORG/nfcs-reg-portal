@@ -560,13 +560,25 @@ export async function updateProfile(formData: FormData, userId: string) {
     const phone = formData.get("phone") as string;
     const date_of_birth = formData.get("date_of_birth") as string || null;
     const address = formData.get("address") as string || null;
-    const society = formData.get("society") as string || null;
+    
+    // Multiple selection support for society
+    const societyValues = formData.getAll("society").map((s) => s.toString().trim()).filter(Boolean);
+    const society = societyValues.length > 0
+      ? Array.from(new Set(societyValues.flatMap((s) => s.split(",").map((x) => x.trim())))).filter(Boolean).join(", ")
+      : (formData.get("society") as string || null);
+
     const parish = formData.get("parish") as string || null;
     const faculty = formData.get("faculty") as string || null;
     const department = formData.get("department") as string || null;
     const academic_level = formData.get("academic_level") as string || null;
     const matric_number = formData.get("matric_number") as string || null;
-    const organ = formData.get("organ") as any || null;
+
+    // Multiple selection support for organ
+    const organValues = formData.getAll("organ").map((o) => o.toString().trim()).filter(Boolean);
+    const organ = organValues.length > 0
+      ? Array.from(new Set(organValues.flatMap((o) => o.split(",").map((x) => x.trim())))).filter(Boolean).join(", ")
+      : (formData.get("organ") as string || null);
+
     const passportPhotoFile = formData.get("passport_photo") as File | null;
 
     if (!full_name) {
@@ -606,6 +618,12 @@ export async function updateProfile(formData: FormData, userId: string) {
       .eq("id", userId);
 
     if (error) {
+      console.error("[updateProfile error]:", error);
+      if (error.message?.includes("organ_type")) {
+        return {
+          error: "To save multiple organs, please run migration 008 in your Supabase SQL Editor (ALTER TABLE public.profiles ALTER COLUMN organ TYPE TEXT).",
+        };
+      }
       return { error: `Profile update failed: ${error.message}` };
     }
 
@@ -631,13 +649,25 @@ export async function updateMemberBiodata(formData: FormData, adminId: string, t
     const phone = formData.get("phone") as string;
     const date_of_birth = formData.get("date_of_birth") as string || null;
     const address = formData.get("address") as string || null;
-    const society = formData.get("society") as string || null;
+    
+    // Multiple selection support for society
+    const societyValues = formData.getAll("society").map((s) => s.toString().trim()).filter(Boolean);
+    const society = societyValues.length > 0
+      ? Array.from(new Set(societyValues.flatMap((s) => s.split(",").map((x) => x.trim())))).filter(Boolean).join(", ")
+      : (formData.get("society") as string || null);
+
     const parish = formData.get("parish") as string || null;
     const faculty = formData.get("faculty") as string || null;
     const department = formData.get("department") as string || null;
     const academic_level = formData.get("academic_level") as string || null;
     const matric_number = formData.get("matric_number") as string || null;
-    const organ = formData.get("organ") as any || null;
+
+    // Multiple selection support for organ
+    const organValues = formData.getAll("organ").map((o) => o.toString().trim()).filter(Boolean);
+    const organ = organValues.length > 0
+      ? Array.from(new Set(organValues.flatMap((o) => o.split(",").map((x) => x.trim())))).filter(Boolean).join(", ")
+      : (formData.get("organ") as string || null);
+
     const position = formData.get("position") as string || null;
 
     if (!full_name) {
@@ -669,6 +699,12 @@ export async function updateMemberBiodata(formData: FormData, adminId: string, t
       .eq("id", targetMemberId);
 
     if (error) {
+      console.error("[updateMemberBiodata error]:", error);
+      if (error.message?.includes("organ_type")) {
+        return {
+          error: "To save multiple organs, please run migration 008 in your Supabase SQL Editor (ALTER TABLE public.profiles ALTER COLUMN organ TYPE TEXT).",
+        };
+      }
       return { error: `Profile update failed: ${error.message}` };
     }
 

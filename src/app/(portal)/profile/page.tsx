@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { ORGANS } from "@/lib/validations/member.schema";
 import { UNN_CAMPUS_DATA, UNN_HOSTELS, NFCS_SOCIETIES } from "@/lib/utils/unn-data";
 import { cn } from "@/lib/utils/cn";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   User,
   Mail,
@@ -30,6 +31,9 @@ import {
   Loader2,
   IdCard,
   Lock,
+  Search,
+  X,
+  Plus,
 } from "lucide-react";
 
 
@@ -46,6 +50,12 @@ export default function ProfilePage() {
   const [selectedDepartment, setSelectedDepartment] = React.useState("");
   const [selectedHostel, setSelectedHostel] = React.useState("");
   const [customAddress, setCustomAddress] = React.useState("");
+
+  // Multiple selection states for Organ and Catholic Society
+  const [selectedOrgans, setSelectedOrgans] = React.useState<string[]>([]);
+  const [selectedSocieties, setSelectedSocieties] = React.useState<string[]>([]);
+  const [societySearch, setSocietySearch] = React.useState("");
+  const [customSocietyInput, setCustomSocietyInput] = React.useState("");
 
   const isRestrictedRole = profile ? (profile.role !== "exco" && profile.role !== "super_admin") : false;
   const isFacultyDisabled = isRestrictedRole && !!profile?.faculty;
@@ -75,8 +85,56 @@ export default function ProfilePage() {
         setSelectedHostel("");
         setCustomAddress("");
       }
+
+      // Sync organs
+      if (profile.organ) {
+        setSelectedOrgans(profile.organ.split(",").map((s) => s.trim()).filter(Boolean));
+      } else {
+        setSelectedOrgans([]);
+      }
+
+      // Sync societies
+      if (profile.society) {
+        setSelectedSocieties(profile.society.split(",").map((s) => s.trim()).filter(Boolean));
+      } else {
+        setSelectedSocieties([]);
+      }
     }
   }, [profile]);
+
+  const toggleOrgan = (o: string) => {
+    setSelectedOrgans((prev) =>
+      prev.includes(o) ? prev.filter((item) => item !== o) : [...prev, o]
+    );
+  };
+
+  const toggleSociety = (soc: string) => {
+    setSelectedSocieties((prev) =>
+      prev.includes(soc) ? prev.filter((item) => item !== soc) : [...prev, soc]
+    );
+  };
+
+  const handleAddCustomSociety = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.preventDefault();
+    const trimmed = customSocietyInput.trim();
+    if (!trimmed) return;
+    if (!selectedSocieties.includes(trimmed)) {
+      setSelectedSocieties((prev) => [...prev, trimmed]);
+    }
+    setCustomSocietyInput("");
+  };
+
+  const allSocieties = React.useMemo(() => {
+    const custom = selectedSocieties.filter((s) => !NFCS_SOCIETIES.includes(s as any));
+    return Array.from(new Set([...custom, ...NFCS_SOCIETIES]));
+  }, [selectedSocieties]);
+
+  const filteredSocieties = React.useMemo(() => {
+    if (!societySearch.trim()) return allSocieties;
+    return allSocieties.filter((s) =>
+      s.toLowerCase().includes(societySearch.toLowerCase())
+    );
+  }, [allSocieties, societySearch]);
 
   // Sync profile photo to preview when profile loads
   React.useEffect(() => {
@@ -135,6 +193,16 @@ export default function ProfilePage() {
 
     if (photoFile) {
       formData.append("passport_photo", photoFile);
+    }
+
+    // Set multiple selections for organ and society
+    formData.delete("organ");
+    formData.delete("society");
+    if (selectedOrgans.length > 0) {
+      formData.set("organ", selectedOrgans.join(", "));
+    }
+    if (selectedSocieties.length > 0) {
+      formData.set("society", selectedSocieties.join(", "));
     }
 
     try {
@@ -317,15 +385,32 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 text-xs text-text-secondary">
-                <Music className="h-4 w-4 text-text-tertiary shrink-0" />
-                <div>
+              <div className="flex items-start gap-3 text-xs text-text-secondary">
+                <Music className="h-4 w-4 text-text-tertiary shrink-0 mt-0.5" />
+                <div className="min-w-0">
                   <p className="font-semibold text-text-primary capitalize">
-                    {profile.organ ? profile.organ.replace(/_/g, " ") : "None"}
+                    {profile.organ
+                      ? profile.organ
+                          .split(",")
+                          .map((o) => o.trim().replace(/_/g, " "))
+                          .join(", ")
+                      : "None"}
                   </p>
-                  <p className="text-[10px] text-text-tertiary">Scope Organ</p>
+                  <p className="text-[10px] text-text-tertiary">Scope Organ(s)</p>
                 </div>
               </div>
+
+              {profile.society && (
+                <div className="flex items-start gap-3 text-xs text-text-secondary">
+                  <Church className="h-4 w-4 text-text-tertiary shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-text-primary">
+                      {profile.society}
+                    </p>
+                    <p className="text-[10px] text-text-tertiary">Catholic Society / Devotional Group</p>
+                  </div>
+                </div>
+              )}
 
               {profile.role === "exco" && (
                 <div className="flex items-center gap-3 text-xs text-text-secondary animate-in fade-in duration-300">
@@ -473,38 +558,141 @@ export default function ProfilePage() {
                 </div>
 
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {/* Catholic Society */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-text-secondary">Catholic Society / Devotional Group</label>
-                    <Select
-                      name="society"
-                      defaultValue={profile.society || ""}
+                {/* Home Parish */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-text-secondary">Home Parish / Base Church</label>
+                  <div className="relative">
+                    <Church className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
+                    <Input
+                      name="parish"
+                      placeholder="St. Peter's Chaplaincy, UNN"
+                      defaultValue={profile.parish || ""}
                       disabled={isLoading}
-                      className="text-xs"
-                    >
-                      <option value="">Select Devotional Society / Unit</option>
-                      {NFCS_SOCIETIES.map((soc) => (
-                        <option key={soc} value={soc}>{soc}</option>
-                      ))}
-                      {profile.society && !NFCS_SOCIETIES.includes(profile.society as any) && (
-                        <option value={profile.society}>{profile.society}</option>
-                      )}
-                    </Select>
+                      className="pl-9 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Catholic Society / Devotional Group (Multi-select Checkbox) */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-semibold text-text-secondary">
+                        Catholic Society / Devotional Group
+                      </label>
+                      <p className="text-[11px] text-text-tertiary">
+                        Select all devotional groups or pious societies you belong to
+                      </p>
+                    </div>
+                    {selectedSocieties.length > 0 && (
+                      <Badge variant="sessionLabel" className="text-[10px]">
+                        {selectedSocieties.length} selected
+                      </Badge>
+                    )}
                   </div>
 
-                  {/* Home Parish */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-text-secondary">Home Parish / Base Church</label>
+                  {/* Selected Badges */}
+                  {selectedSocieties.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 p-2.5 rounded-lg bg-surface-subtle border border-neutrals-borderLight">
+                      {selectedSocieties.map((soc) => (
+                        <span
+                          key={soc}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-brand-light text-brand-accent border border-brand-border animate-in fade-in duration-150"
+                        >
+                          <span>{soc}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleSociety(soc)}
+                            disabled={isLoading}
+                            className="hover:text-danger rounded-full transition-colors focus:outline-none"
+                            title={`Remove ${soc}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Society Search & Checkbox List */}
+                  <div className="space-y-2 border border-neutrals-borderLight rounded-xl p-3 bg-surface">
                     <div className="relative">
-                      <Church className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-tertiary pointer-events-none" />
                       <Input
-                        name="parish"
-                        placeholder="St. Peter's Chaplaincy, UNN"
-                        defaultValue={profile.parish || ""}
+                        placeholder="Search devotional groups / societies..."
+                        value={societySearch}
+                        onChange={(e) => setSocietySearch(e.target.value)}
                         disabled={isLoading}
-                        className="pl-9 text-xs"
+                        className="pl-8 text-xs h-8"
                       />
+                      {societySearch && (
+                        <button
+                          type="button"
+                          onClick={() => setSocietySearch("")}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary text-xs"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 divide-y divide-neutrals-borderLight/40">
+                      {filteredSocieties.map((soc) => {
+                        const isChecked = selectedSocieties.includes(soc);
+                        return (
+                          <div
+                            key={soc}
+                            onClick={() => toggleSociety(soc)}
+                            className={cn(
+                              "flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors duration-100 pt-2",
+                              isChecked
+                                ? "bg-brand-light/40 text-brand-accent"
+                                : "hover:bg-surface-subtle text-text-primary"
+                            )}
+                          >
+                            <Checkbox
+                              id={`society-${soc.replace(/\s+/g, "-")}`}
+                              checked={isChecked}
+                              onChange={() => toggleSociety(soc)}
+                              label={soc}
+                              disabled={isLoading}
+                              className="w-full pointer-events-none"
+                            />
+                          </div>
+                        );
+                      })}
+                      {filteredSocieties.length === 0 && (
+                        <p className="text-center text-xs text-text-tertiary py-4">
+                          No devotional society matching &quot;{societySearch}&quot;
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Custom Society Add Option */}
+                    <div className="pt-2 border-t border-neutrals-borderLight flex gap-2">
+                      <Input
+                        placeholder="Add another society / pious union..."
+                        value={customSocietyInput}
+                        onChange={(e) => setCustomSocietyInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddCustomSociety(e);
+                          }
+                        }}
+                        disabled={isLoading}
+                        className="text-xs h-8 flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleAddCustomSociety}
+                        disabled={isLoading || !customSocietyInput.trim()}
+                        className="h-8 text-xs gap-1 shrink-0"
+                      >
+                        <Plus className="h-3 w-3" /> Add
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -584,23 +772,60 @@ export default function ProfilePage() {
                       <option value="Postgraduate">Postgraduate</option>
                     </Select>
                   </div>
+                </div>
 
-                  {/* Scope Organ */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-text-secondary">Scope Organ</label>
-                    <Select
-                      name="organ"
-                      defaultValue={profile.organ || ""}
-                      disabled={isLoading}
-                      className="text-xs"
-                    >
-                      <option value="">Select Organ</option>
-                      {ORGANS.map((o) => (
-                        <option key={o} value={o}>
-                          {o.replace(/_/g, " ").toUpperCase()}
-                        </option>
-                      ))}
-                    </Select>
+
+                {/* Scope Organ (Multi-select Checkbox) */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-semibold text-text-secondary">
+                        Scope Organ
+                      </label>
+                      <p className="text-[11px] text-text-tertiary">
+                        Select all NFCS organs you participate in
+                      </p>
+                    </div>
+                    {selectedOrgans.length > 0 && (
+                      <Badge variant="sessionLabel" className="text-[10px]">
+                        {selectedOrgans.length} selected
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {ORGANS.map((o) => {
+                      const isChecked = selectedOrgans.includes(o);
+                      const organLabel = o.replace(/_/g, " ").toUpperCase();
+                      return (
+                        <div
+                          key={o}
+                          onClick={() => toggleOrgan(o)}
+                          className={cn(
+                            "flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-150 select-none",
+                            isChecked
+                              ? "border-brand-accent bg-brand-light/30 shadow-xs ring-1 ring-brand-accent/20"
+                              : "border-neutrals-borderLight bg-surface hover:border-neutrals-border hover:bg-surface-subtle"
+                          )}
+                        >
+                          <Checkbox
+                            id={`organ-${o}`}
+                            checked={isChecked}
+                            onChange={() => toggleOrgan(o)}
+                            disabled={isLoading}
+                            className="pointer-events-none mt-0.5"
+                          />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-xs font-semibold text-text-primary">
+                              {organLabel}
+                            </span>
+                            <span className="text-[10px] text-text-tertiary">
+                              NFCS UNN Directorate / Commission
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
