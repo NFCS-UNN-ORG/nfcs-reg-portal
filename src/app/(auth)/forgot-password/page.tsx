@@ -42,18 +42,19 @@ export default function ForgotPasswordPage() {
     setError(null);
     setSuccess(false);
 
-    const formData = new FormData();
-    formData.append("email", values.email);
-
     try {
+      // First try the server action (which sends via Resend custom email template if configured)
+      const formData = new FormData();
+      formData.append("email", values.email);
       const response = await requestPasswordReset(formData);
+
       if (response?.error) {
         setError(response.error);
       } else {
         setSuccess(true);
       }
-    } catch (err) {
-      setError("An unexpected error occurred. Please try again.");
+    } catch (err: any) {
+      setError(err?.message || "An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
