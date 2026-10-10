@@ -78,8 +78,7 @@ function TrackerStep({
       <div className="flex flex-col items-center">
         {/* Status Dot */}
         <div
-          className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-all ${
-            isPaid
+          className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-all ${isPaid
               ? "bg-emerald-100 border-emerald-500 text-emerald-600"
               : isPending
                 ? "bg-amber-100 border-amber-400 text-amber-600 animate-pulse"
@@ -88,7 +87,7 @@ function TrackerStep({
                   : isFuture
                     ? "bg-gray-50 border-gray-200 text-gray-300"
                     : "bg-gray-100 border-gray-300 text-gray-400"
-          }`}
+            }`}
         >
           {isPaid ? (
             <CheckCircle className="h-4 w-4" />
@@ -103,17 +102,15 @@ function TrackerStep({
         {/* Connector Line */}
         {!isLast && (
           <div
-            className={`w-0.5 flex-1 min-h-[32px] ${
-              isPaid ? "bg-emerald-300" : isFuture ? "bg-gray-100" : "bg-gray-200"
-            }`}
+            className={`w-0.5 flex-1 min-h-[32px] ${isPaid ? "bg-emerald-300" : isFuture ? "bg-gray-100" : "bg-gray-200"
+              }`}
           />
         )}
       </div>
 
       {/* Content Card */}
       <div
-        className={`flex-1 mb-4 rounded-xl border p-4 transition-all hover:shadow-md ${
-          isPaid
+        className={`flex-1 mb-4 rounded-xl border p-4 transition-all hover:shadow-md ${isPaid
             ? "bg-emerald-50/50 border-emerald-200"
             : isPending
               ? "bg-amber-50/50 border-amber-200"
@@ -122,7 +119,7 @@ function TrackerStep({
                 : isFuture
                   ? "bg-gray-50/60 border-gray-200/80 opacity-75"
                   : "bg-white border-neutrals-borderLight shadow-card"
-        }`}
+          }`}
       >
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="space-y-1">
@@ -251,20 +248,20 @@ export default async function MyDuesPage() {
   // Build payment tracker (students/excos only)
   const tracker = !userIsAlumnus
     ? buildPaymentTracker({
-        currentLevelOrdinal: levelOrdinal,
-        totalCourseYears,
-        existingPayments: (payments || []).map((p) => ({
-          id: p.id,
-          dues_type: p.dues_type,
-          payment_period: p.payment_period,
-          status: p.status,
-          amount: p.amount,
-          payment_reference: p.payment_reference,
-          payment_date: p.payment_date,
-          created_at: p.created_at,
-        })),
-        currentSession: CURRENT_SESSION,
-      })
+      currentLevelOrdinal: levelOrdinal,
+      totalCourseYears,
+      existingPayments: (payments || []).map((p) => ({
+        id: p.id,
+        dues_type: p.dues_type,
+        payment_period: p.payment_period,
+        status: p.status,
+        amount: p.amount,
+        payment_reference: p.payment_reference,
+        payment_date: p.payment_date,
+        created_at: p.created_at,
+      })),
+      currentSession: CURRENT_SESSION,
+    })
     : [];
 
   const nextOutstanding = getNextOutstanding(tracker);

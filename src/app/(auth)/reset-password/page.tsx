@@ -52,26 +52,47 @@ function ResetPasswordContent() {
     if (savedNum !== null) setRequireNumbers(savedNum === "true");
     if (savedSym !== null) setRequireSymbols(savedSym === "true");
 
-    // Inspect URL hash or query params for Supabase errors (e.g. otp_expired)
-    if (typeof window !== "undefined") {
-      const hash = window.location.hash;
-      if (hash.includes("error")) {
-        const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
-        const desc = hashParams.get("error_description");
-        if (desc) {
-          setSessionError(decodeURIComponent(desc.replace(/\+/g, " ")));
-        }
-      }
-      const searchParams = new URLSearchParams(window.location.search);
-      const queryErr = searchParams.get("error_description") || searchParams.get("error");
-      if (queryErr) {
-        setSessionError(decodeURIComponent(queryErr.replace(/\+/g, " ")));
-      }
-    }
-
-    // Check if user has active recovery session
+    // Inspect URL hash or query params for Supabase errors or auth code
     const checkSession = async () => {
       const supabase = createClient();
+
+      if (typeof window !== "undefined") {
+        const hash = window.location.hash;
+        if (hash.includes("error")) {
+          const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+          const desc = hashParams.get("error_description");
+          if (desc) {
+            setSessionError(decodeURIComponent(desc.replace(/\+/g, " ")));
+            setIsVerifyingSession(false);
+            return;
+          }
+        }
+        const searchParams = new URLSearchParams(window.location.search);
+        const queryErr = searchParams.get("error_description") || searchParams.get("error");
+        if (queryErr) {
+          setSessionError(decodeURIComponent(queryErr.replace(/\+/g, " ")));
+          setIsVerifyingSession(false);
+          return;
+        }
+
+        // If ?code= is present in the URL, exchange it directly on client
+        const code = searchParams.get("code");
+        if (code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) {
+            console.error("[reset-password] code exchange error:", exchangeError);
+            setSessionError(exchangeError.message);
+            setIsVerifyingSession(false);
+            return;
+          } else {
+            setHasValidSession(true);
+            setIsVerifyingSession(false);
+            return;
+          }
+        }
+      }
+
+      // Check if user has active recovery session
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session) {
