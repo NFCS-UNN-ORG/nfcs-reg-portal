@@ -12,7 +12,7 @@ import { createNotification } from "@/lib/actions/notification.actions";
 import { getLevelOrdinal, deriveSessionLabel, CURRENT_SESSION, buildPaymentTracker, isRequiredDuesType } from "@/lib/utils/fees";
 import { getYearsOfStudy, isAlumnus } from "@/lib/utils/unn-data";
 
-/** Fetch a single payment by reference — uses adminClient to bypass RLS join issues in checkout */
+/** Fetch payment by reference (single or batch) — uses adminClient to bypass RLS join issues in checkout */
 export async function getPaymentByReference(reference: string) {
   try {
     // Verify the caller is authenticated
@@ -20,18 +20,17 @@ export async function getPaymentByReference(reference: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Authentication required", payment: null };
 
-    const { data: payment, error } = await adminClient
+    const { data: payments, error } = await adminClient
       .from("payments")
-      .select("id, payment_reference, dues_type, payment_period, amount, status, profile_id, gateway, opay_cashier_url")
-      .eq("payment_reference", reference)
-      .single();
+      .select("id, payment_reference, dues_type, payment_period, amount, status, profile_id, gateway, opay_cashier_url, gateway_reference, checkout_url")
+      .or(`payment_reference.eq.${reference},gateway_reference.eq.${reference}`);
 
-    if (error || !payment) {
+    if (error || !payments || payments.length === 0) {
       return { error: "Payment transaction not found.", payment: null };
     }
 
-    // Security: ensure the payment belongs to the requesting user
-    if (payment.profile_id !== user.id) {
+    // Security: ensure the payments belong to the requesting user
+    if (payments.some((p) => p.profile_id !== user.id)) {
       return { error: "Unauthorized.", payment: null };
     }
 
@@ -42,9 +41,15 @@ export async function getPaymentByReference(reference: string) {
       .eq("id", user.id)
       .single();
 
+    const totalAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const combinedPeriods = Array.from(new Set(payments.map((p) => p.payment_period).filter(Boolean))).join(", ");
+    const primary = payments[0];
+
     return {
       payment: {
-        ...payment,
+        ...primary,
+        amount: totalAmount,
+        payment_period: combinedPeriods || primary.payment_period,
         full_name: profile?.full_name ?? null,
         mock_checkout_enabled: process.env.OPAY_ENABLE_MOCK_CHECKOUT === "true",
       },
@@ -140,27 +145,36 @@ export async function initiatePayment(values: {
 
 export async function confirmMockPayment(reference: string) {
   try {
-    const { data: payment, error: findError } = await adminClient
+    const { data: payments, error: findError } = await adminClient
       .from("payments")
       .select("*")
-      .eq("payment_reference", reference)
-      .single();
+      .or(`payment_reference.eq.${reference},gateway_reference.eq.${reference}`);
 
-    if (findError || !payment) {
+    if (findError || !payments || payments.length === 0) {
       return { error: "Payment record not found" };
     }
 
+    const allConfirmed = payments.every((p) => p.status === "confirmed");
+    if (allConfirmed) {
+      return { success: true, message: "Payment already confirmed" };
+    }
+
+    const paymentIds = payments.map((p) => p.id);
     const { error: updateError } = await adminClient
       .from("payments")
       .update({
         status: "confirmed",
         payment_date: new Date().toISOString().split("T")[0],
       })
-      .eq("payment_reference", reference);
+      .in("id", paymentIds);
 
     if (updateError) {
       return { error: updateError.message };
     }
+
+    const payment = payments[0];
+    const totalAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const combinedPeriods = Array.from(new Set(payments.map((p) => p.payment_period).filter(Boolean))).join(", ");
 
     // Write audit log
     await adminClient.from("audit_log").insert({
@@ -170,7 +184,8 @@ export async function confirmMockPayment(reference: string) {
       target_id: payment.id,
       metadata: {
         reference,
-        amount: payment.amount,
+        amount: totalAmount,
+        count: payments.length,
       },
     });
 
@@ -208,9 +223,9 @@ export async function confirmMockPayment(reference: string) {
             <DuesReceipt
               fullName={fullName}
               reference={reference}
-              amount={payment.amount}
+              amount={totalAmount}
               duesType={payment.dues_type}
-              period={payment.payment_period || ""}
+              period={combinedPeriods || payment.payment_period || ""}
               datePaid={new Date().toLocaleDateString()}
             />
           ),
@@ -220,15 +235,14 @@ export async function confirmMockPayment(reference: string) {
       console.error("Failed to send dues receipt email:", emailErr);
     }
 
-
     // In-app notification for the paying student
     if (payment.profile_id) {
       await createNotification({
         profile_id: payment.profile_id,
         title: "Payment Confirmed ✓",
-        body: `Your payment of ₦${Number(payment.amount).toLocaleString()} for ${(payment.dues_type as string)?.replace("_", " ")} (${payment.payment_period ?? ""}) has been confirmed. Ref: ${reference}.`,
+        body: `Your payment of ₦${totalAmount.toLocaleString()} (${payments.length > 1 ? `${payments.length} sessions: ${combinedPeriods}` : `${(payment.dues_type as string)?.replace("_", " ")} (${payment.payment_period ?? ""})`}) has been confirmed. Ref: ${reference}.`,
         type: "payment_confirmed",
-        metadata: { reference, amount: payment.amount, dues_type: payment.dues_type },
+        metadata: { reference, amount: totalAmount, dues_type: payment.dues_type },
       });
     }
 
@@ -242,27 +256,38 @@ export async function confirmMockPayment(reference: string) {
 
 export async function failMockPayment(reference: string) {
   try {
-    const { data: payment, error } = await adminClient
+    const { data: payments, error: findError } = await adminClient
+      .from("payments")
+      .select("*")
+      .or(`payment_reference.eq.${reference},gateway_reference.eq.${reference}`);
+
+    if (findError || !payments || payments.length === 0) {
+      return { error: "Payment record not found" };
+    }
+
+    const paymentIds = payments.map((p) => p.id);
+    const { error } = await adminClient
       .from("payments")
       .update({
         status: "failed",
       })
-      .eq("payment_reference", reference)
-      .select()
-      .single();
+      .in("id", paymentIds);
 
-    if (error || !payment) {
-      return { error: error?.message || "Payment record not found" };
+    if (error) {
+      return { error: error.message };
     }
+
+    const payment = payments[0];
+    const totalAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
 
     // In-app notification for the student
     if (payment.profile_id) {
       await createNotification({
         profile_id: payment.profile_id,
         title: "Payment Failed ✗",
-        body: `Your payment of ₦${Number(payment.amount).toLocaleString()} for ${(payment.dues_type as string)?.replace("_", " ")} (${payment.payment_period ?? ""}) has failed. Ref: ${reference}.`,
+        body: `Your payment of ₦${totalAmount.toLocaleString()} has failed. Ref: ${reference}.`,
         type: "payment_failed",
-        metadata: { reference, amount: payment.amount, dues_type: payment.dues_type, status: "failed" },
+        metadata: { reference, amount: totalAmount, dues_type: payment.dues_type, status: "failed" },
       });
     }
 
@@ -270,7 +295,7 @@ export async function failMockPayment(reference: string) {
     revalidatePath("/admin/dues");
     return { success: true };
   } catch (err: any) {
-    return { error: err?.message || "Failed to fail payment" };
+    return { error: err?.message || "Failed to mark payment as failed" };
   }
 }
 
@@ -535,6 +560,219 @@ export async function recordManualPayment(values: ManualPaymentFormValues, excoI
   }
 }
 
+export interface BatchPaymentItem {
+  yearOrdinal: number;
+  session: string;
+  dues_type: "membership_levy" | "annual_dues" | "special_levy" | "other";
+  amount: number;
+}
+
+export interface BatchManualPaymentValues {
+  member_id: string;
+  items: BatchPaymentItem[];
+  receipt_number: string;
+  payment_date: string;
+  notes?: string;
+}
+
+/** Record manual payments for multiple academic sessions in a single transaction */
+export async function recordBatchManualPayment(
+  values: BatchManualPaymentValues,
+  excoId: string
+) {
+  try {
+    const supabase = await createClient();
+    const { data: excoProfile } = await supabase
+      .from("profiles")
+      .select("id, role, full_name")
+      .eq("id", excoId)
+      .single();
+
+    if (!excoProfile || (excoProfile.role !== "super_admin" && excoProfile.role !== "exco")) {
+      return { error: "Unauthorized. Exco or Super Admin privileges required." };
+    }
+
+    if (!values.items || values.items.length === 0) {
+      return { error: "Please select at least one session to record payment." };
+    }
+
+    const memberContext = await getMemberPaymentContext(values.member_id);
+    if (memberContext.error || !memberContext.member || !memberContext.tracker) {
+      return { error: memberContext.error || "Member context not found." };
+    }
+
+    const { currentLevelOrdinal = 0, userIsAlumnus = false, tracker = [] } = memberContext;
+
+    if (!userIsAlumnus && currentLevelOrdinal > 0) {
+      const sortedItems = [...values.items].sort((a, b) => a.yearOrdinal - b.yearOrdinal);
+
+      for (const item of sortedItems) {
+        if (item.yearOrdinal > currentLevelOrdinal) {
+          return {
+            error: `Cannot record payment for Year ${item.yearOrdinal}. Student is currently in ${memberContext.member.academic_level || "a lower level"} and has not reached this year.`,
+          };
+        }
+        const targetSession = tracker.find((s: any) => s.yearOrdinal === item.yearOrdinal);
+        if (targetSession?.existingPayment?.status === "confirmed") {
+          return {
+            error: `Payment for ${targetSession.yearLabel} (${targetSession.session}) has already been paid and confirmed.`,
+          };
+        }
+      }
+
+      // Sequential continuity check: all years up to max selected year must be confirmed or included
+      const maxYear = Math.max(...sortedItems.map((i) => i.yearOrdinal));
+      for (let yr = 1; yr <= maxYear; yr++) {
+        const alreadyConfirmed = tracker.find((s: any) => s.yearOrdinal === yr)?.existingPayment?.status === "confirmed";
+        const includedInBatch = sortedItems.some((i) => i.yearOrdinal === yr);
+        if (!alreadyConfirmed && !includedInBatch) {
+          return {
+            error: `Sequential payment rule: Cannot pay Year ${maxYear} without paying Year ${yr}. Please select all preceding unpaid years.`,
+          };
+        }
+      }
+    }
+
+    // Determine target member
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id, email, full_name")
+      .eq("id", values.member_id)
+      .single();
+
+    let profile_id = null;
+    let legacy_member_id = null;
+    let email = "";
+    let fullName = "";
+
+    if (profile) {
+      profile_id = values.member_id;
+      email = profile.email;
+      fullName = profile.full_name;
+    } else {
+      const { data: legacy } = await adminClient
+        .from("legacy_members")
+        .select("id, email, full_name")
+        .eq("id", values.member_id)
+        .single();
+      if (legacy) {
+        legacy_member_id = values.member_id;
+        email = legacy.email || "";
+        fullName = legacy.full_name;
+      }
+    }
+
+    const masterBatchRef = `MAN-BATCH-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
+    const baseReceipt = values.receipt_number || `REC-${Math.floor(100000 + Math.random() * 900000)}`;
+    const insertedPayments: any[] = [];
+
+    for (let idx = 0; idx < values.items.length; idx++) {
+      const item = values.items[idx];
+      const childRef = `${masterBatchRef}-Y${item.yearOrdinal}`;
+      const childReceipt = values.items.length > 1 ? `${baseReceipt}-${idx + 1}` : baseReceipt;
+
+      const { data: payment, error } = await adminClient
+        .from("payments")
+        .insert({
+          profile_id,
+          legacy_member_id,
+          amount: item.amount,
+          dues_type: item.dues_type,
+          channel: "manual",
+          status: "confirmed",
+          payment_period: item.session,
+          payment_reference: childRef,
+          gateway_reference: masterBatchRef,
+          recorded_by: excoId,
+          receipt_number: childReceipt,
+          payment_date: values.payment_date,
+          notes: values.notes || null,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        return { error: `Failed to record payment for Year ${item.yearOrdinal}: ${error.message}` };
+      }
+      insertedPayments.push(payment);
+    }
+
+    const totalAmount = values.items.reduce((sum, i) => sum + i.amount, 0);
+    const sessionLabels = values.items.map((i) => i.session).join(", ");
+    const excoName = excoProfile?.full_name ?? "an Exco member";
+
+    // Write audit log
+    await adminClient.from("audit_log").insert({
+      actor_id: excoId,
+      action: "record_batch_manual_payment",
+      target_type: "payment",
+      target_id: insertedPayments[0]?.id,
+      metadata: {
+        member_id: values.member_id,
+        total_amount: totalAmount,
+        sessions_count: values.items.length,
+        batch_reference: masterBatchRef,
+      },
+    });
+
+    // Dual notifications
+    if (profile_id) {
+      await createNotification({
+        profile_id,
+        title: "Batch Dues Payment Recorded ✓",
+        body: `Your dues payment of ₦${totalAmount.toLocaleString()} for ${values.items.length} session(s) (${sessionLabels}) was successfully recorded by ${excoName}.`,
+        type: "payment_recorded_by_exco",
+        metadata: { batch_reference: masterBatchRef, count: values.items.length, amount: totalAmount },
+      });
+
+      await createNotification({
+        profile_id: excoId,
+        title: "Batch Payment Successfully Recorded",
+        body: `You successfully recorded dues payment of ₦${totalAmount.toLocaleString()} (${values.items.length} sessions) on behalf of ${fullName}.`,
+        type: "payment_recorded_by_exco",
+        metadata: { batch_reference: masterBatchRef, student_name: fullName, student_id: profile_id, amount: totalAmount },
+      });
+    }
+
+    // Send consolidated receipt email
+    if (email) {
+      try {
+        await sendEmail({
+          to: email,
+          subject: `NFCS Payment Receipt: ${masterBatchRef}`,
+          react: (
+            <DuesReceipt
+              fullName={fullName}
+              reference={masterBatchRef}
+              amount={totalAmount}
+              duesType="annual_dues"
+              period={sessionLabels}
+              datePaid={values.payment_date || new Date().toLocaleDateString()}
+            />
+          ),
+        });
+      } catch (emailErr) {
+        console.error("Failed to send dues receipt email:", emailErr);
+      }
+    }
+
+    revalidatePath("/dues");
+    revalidatePath("/dashboard");
+    revalidatePath("/admin/dues");
+    revalidatePath("/admin/members");
+    revalidatePath("/dues/history");
+
+    return {
+      success: true,
+      count: values.items.length,
+      totalAmount,
+      batchReference: masterBatchRef,
+    };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to record batch manual payment" };
+  }
+}
+
 /** Fetch all payments for the currently authenticated user (for client-side use) */
 export async function getMyPayments() {
   const supabase = await createClient();
@@ -788,20 +1026,21 @@ export async function deletePayment(paymentId: string) {
 
 export async function confirmOnlinePayment(reference: string, gatewayResponse: any) {
   try {
-    const { data: payment, error: findError } = await adminClient
+    const { data: payments, error: findError } = await adminClient
       .from("payments")
       .select("*")
-      .eq("payment_reference", reference)
-      .single();
+      .or(`payment_reference.eq.${reference},gateway_reference.eq.${reference}`);
 
-    if (findError || !payment) {
+    if (findError || !payments || payments.length === 0) {
       return { error: "Payment record not found" };
     }
 
-    if (payment.status === "confirmed") {
+    const allConfirmed = payments.every((p) => p.status === "confirmed");
+    if (allConfirmed) {
       return { success: true, message: "Payment already confirmed" };
     }
 
+    const paymentIds = payments.map((p) => p.id);
     const { error: updateError } = await adminClient
       .from("payments")
       .update({
@@ -809,11 +1048,15 @@ export async function confirmOnlinePayment(reference: string, gatewayResponse: a
         payment_date: new Date().toISOString().split("T")[0],
         gateway_response: gatewayResponse,
       })
-      .eq("payment_reference", reference);
+      .in("id", paymentIds);
 
     if (updateError) {
       return { error: updateError.message };
     }
+
+    const totalAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const combinedPeriods = Array.from(new Set(payments.map((p) => p.payment_period).filter(Boolean))).join(", ");
+    const payment = payments[0];
 
     // Write audit log
     await adminClient.from("audit_log").insert({
@@ -823,7 +1066,8 @@ export async function confirmOnlinePayment(reference: string, gatewayResponse: a
       target_id: payment.id,
       metadata: {
         reference,
-        amount: payment.amount,
+        amount: totalAmount,
+        count: payments.length,
         gateway: payment.gateway,
       },
     });
@@ -862,9 +1106,9 @@ export async function confirmOnlinePayment(reference: string, gatewayResponse: a
             <DuesReceipt
               fullName={fullName}
               reference={reference}
-              amount={payment.amount}
+              amount={totalAmount}
               duesType={payment.dues_type}
-              period={payment.payment_period || ""}
+              period={combinedPeriods || payment.payment_period || ""}
               datePaid={new Date().toLocaleDateString()}
             />
           ),
@@ -879,9 +1123,9 @@ export async function confirmOnlinePayment(reference: string, gatewayResponse: a
       await createNotification({
         profile_id: payment.profile_id,
         title: "Payment Confirmed ✓",
-        body: `Your online payment of ₦${Number(payment.amount).toLocaleString()} for ${(payment.dues_type as string)?.replace("_", " ")} (${payment.payment_period ?? ""}) has been confirmed. Ref: ${reference}.`,
+        body: `Your online payment of ₦${totalAmount.toLocaleString()} (${payments.length > 1 ? `${payments.length} sessions: ${combinedPeriods}` : `${(payment.dues_type as string)?.replace("_", " ")} (${payment.payment_period ?? ""})`}) has been confirmed. Ref: ${reference}.`,
         type: "payment_confirmed",
-        metadata: { reference, amount: payment.amount, dues_type: payment.dues_type, status: "confirmed" },
+        metadata: { reference, amount: totalAmount, dues_type: payment.dues_type, status: "confirmed" },
       });
     }
 
@@ -895,28 +1139,39 @@ export async function confirmOnlinePayment(reference: string, gatewayResponse: a
 
 export async function failOnlinePayment(reference: string, gatewayResponse: any) {
   try {
-    const { data: payment, error } = await adminClient
+    const { data: payments, error: findError } = await adminClient
+      .from("payments")
+      .select("*")
+      .or(`payment_reference.eq.${reference},gateway_reference.eq.${reference}`);
+
+    if (findError || !payments || payments.length === 0) {
+      return { error: "Payment record not found" };
+    }
+
+    const paymentIds = payments.map((p) => p.id);
+    const { error } = await adminClient
       .from("payments")
       .update({
         status: "failed",
         gateway_response: gatewayResponse,
       })
-      .eq("payment_reference", reference)
-      .select()
-      .single();
+      .in("id", paymentIds);
 
-    if (error || !payment) {
-      return { error: error?.message || "Payment record not found" };
+    if (error) {
+      return { error: error.message };
     }
+
+    const payment = payments[0];
+    const totalAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
 
     // In-app notification for the student
     if (payment.profile_id) {
       await createNotification({
         profile_id: payment.profile_id,
         title: "Payment Failed ✗",
-        body: `Your online payment of ₦${Number(payment.amount).toLocaleString()} for ${(payment.dues_type as string)?.replace("_", " ")} (${payment.payment_period ?? ""}) has failed. Ref: ${reference}.`,
+        body: `Your online payment of ₦${totalAmount.toLocaleString()} has failed. Ref: ${reference}.`,
         type: "payment_failed",
-        metadata: { reference, amount: payment.amount, dues_type: payment.dues_type, status: "failed" },
+        metadata: { reference, amount: totalAmount, status: "failed" },
       });
     }
 

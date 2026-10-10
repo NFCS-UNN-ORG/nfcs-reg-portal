@@ -3,6 +3,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { getAppUrl } from "@/lib/utils/app-url";
+import { adminClient } from "@/lib/supabase/admin";
+import { sendEmail } from "@/lib/email";
+import ResetPasswordEmail from "../../../emails/ResetPasswordEmail";
+import * as React from "react";
 
 export async function login(formData: FormData) {
   try {
@@ -56,7 +60,7 @@ export async function logout() {
 }
 
 export async function requestPasswordReset(formData: FormData) {
-  const email = formData.get("email") as string;
+  const email = (formData.get("email") as string)?.trim().toLowerCase();
 
   if (!email) {
     return { error: "Email is required" };
@@ -65,8 +69,37 @@ export async function requestPasswordReset(formData: FormData) {
   try {
     const supabase = await createClient();
     const appUrl = getAppUrl();
+    const redirectTo = `${appUrl}/auth/callback?next=/reset-password`;
+
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const hasResend = resendApiKey && resendApiKey.startsWith("re_") && resendApiKey !== "re_your_api_key";
+
+    if (hasResend) {
+      try {
+        const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+          type: "recovery",
+          email,
+          options: { redirectTo },
+        });
+
+        if (!linkError && linkData?.properties?.action_link) {
+          await sendEmail({
+            to: email,
+            subject: "Reset Your NFCS UNN Portal Password",
+            react: React.createElement(ResetPasswordEmail, {
+              resetUrl: linkData.properties.action_link,
+            }),
+          });
+
+          return { success: true };
+        }
+      } catch (adminErr) {
+        console.warn("[requestPasswordReset] Admin generateLink error, falling back to standard reset:", adminErr);
+      }
+    }
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${appUrl}/auth/callback?next=/reset-password`,
+      redirectTo,
     });
 
     if (error) {
@@ -84,6 +117,7 @@ export async function requestPasswordReset(formData: FormData) {
     return { error: "An unexpected error occurred. Please try again." };
   }
 }
+
 
 export async function resendConfirmationEmail(email: string) {
   if (!email) {

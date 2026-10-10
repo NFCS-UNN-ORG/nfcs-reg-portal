@@ -43,6 +43,12 @@ export async function initiatePaystackPayment(values: {
   dues_type: PaymentFormValues["dues_type"];
   payment_period: string;
   notes?: string;
+  items?: Array<{
+    yearOrdinal: number;
+    session: string;
+    dues_type: "membership_levy" | "annual_dues";
+    amount: number;
+  }>;
 }) {
   const supabase = await createClient();
   const {
@@ -65,7 +71,144 @@ export async function initiatePaystackPayment(values: {
   const isMockCheckoutEnabled = process.env.OPAY_ENABLE_MOCK_CHECKOUT === "true";
   const hasPaystackCredentials = isUsableSecret(readEnv("PAYSTACK_SECRET_KEY"));
 
-  // Check required dues business logic
+  // ── Handle Batch Payment If Provided ─────────────────────────────────────────
+  if (values.items && values.items.length > 0 && profile && !isAlumnus(profile.role)) {
+    const levelOrdinal = getLevelOrdinal(profile.academic_level);
+    const totalCourseYears = getYearsOfStudy(
+      profile.faculty,
+      profile.department,
+    );
+
+    const { data: allPayments } = await adminClient
+      .from("payments")
+      .select("id, dues_type, payment_period, status, amount, payment_reference, payment_date, created_at")
+      .eq("profile_id", user.id);
+
+    const tracker = buildPaymentTracker({
+      currentLevelOrdinal: levelOrdinal,
+      totalCourseYears,
+      existingPayments: (allPayments || []).map((p) => ({
+        id: p.id,
+        dues_type: p.dues_type,
+        payment_period: p.payment_period,
+        status: p.status,
+        amount: p.amount,
+        payment_reference: p.payment_reference,
+        payment_date: p.payment_date,
+        created_at: p.created_at,
+      })),
+      currentSession: CURRENT_SESSION,
+    });
+
+    const sortedItems = [...values.items].sort((a, b) => a.yearOrdinal - b.yearOrdinal);
+
+    for (const item of sortedItems) {
+      if (item.yearOrdinal > levelOrdinal) {
+        return {
+          error: `Cannot pay dues for Year ${item.yearOrdinal}. You have not reached this academic level yet.`,
+        };
+      }
+      const existingSession = tracker.find((s) => s.yearOrdinal === item.yearOrdinal);
+      if (existingSession?.existingPayment?.status === "confirmed") {
+        return {
+          error: `Payment for ${existingSession.yearLabel} (${existingSession.session}) has already been confirmed.`,
+        };
+      }
+    }
+
+    const maxYear = Math.max(...sortedItems.map((i) => i.yearOrdinal));
+    for (let yr = 1; yr <= maxYear; yr++) {
+      const alreadyConfirmed = tracker.find((s) => s.yearOrdinal === yr)?.existingPayment?.status === "confirmed";
+      const included = sortedItems.some((i) => i.yearOrdinal === yr);
+      if (!alreadyConfirmed && !included) {
+        return {
+          error: `Sequential payment rule: Please include Year ${yr} before paying Year ${maxYear}.`,
+        };
+      }
+    }
+
+    const masterReference = `NFCS-PST-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
+    const appUrl = getAppUrl();
+    const callbackUrl = `${appUrl}/api/payments/paystack/verify/${masterReference}`;
+    const totalAmount = sortedItems.reduce((sum, i) => sum + i.amount, 0);
+    const combinedPeriods = sortedItems.map((i) => i.session).join(", ");
+
+    const childRecords = sortedItems.map((item) => ({
+      profile_id: user.id,
+      amount: item.amount,
+      dues_type: item.dues_type,
+      channel: "online" as const,
+      status: "pending" as const,
+      payment_reference: `${masterReference}-Y${item.yearOrdinal}`,
+      gateway_reference: masterReference,
+      gateway: (!hasPaystackCredentials && isMockCheckoutEnabled) ? "mock_gateway" : "paystack",
+      payment_period: item.session,
+      notes: values.notes || null,
+      checkout_url: `${appUrl}/dues/pay/checkout?ref=${masterReference}`,
+    }));
+
+    const { error: insertError } = await adminClient.from("payments").insert(childRecords);
+    if (insertError) {
+      return { error: insertError.message };
+    }
+
+    if (!hasPaystackCredentials && isMockCheckoutEnabled) {
+      return {
+        success: true,
+        reference: masterReference,
+        checkoutUrl: `${appUrl}/dues/pay/checkout?ref=${masterReference}`,
+        isMock: true,
+      };
+    }
+
+    if (!hasPaystackCredentials) {
+      return {
+        error:
+          "Paystack credentials are not configured. Please set PAYSTACK_SECRET_KEY in settings or environment.",
+      };
+    }
+
+    const paystack = new PaystackService();
+    const initResult = await paystack.initializeTransaction({
+      amount: totalAmount,
+      email: profile?.email || user.email || "student@nfcs-unn.org",
+      reference: masterReference,
+      callbackUrl,
+      metadata: {
+        profile_id: user.id,
+        full_name: profile?.full_name,
+        dues_type: "annual_dues",
+        payment_period: combinedPeriods,
+        batch: true,
+        count: sortedItems.length,
+      },
+    });
+
+    if (!initResult.success) {
+      await adminClient
+        .from("payments")
+        .update({ status: "failed", gateway_response: { error: initResult.error } })
+        .eq("gateway_reference", masterReference);
+      return { error: initResult.error };
+    }
+
+    await adminClient
+      .from("payments")
+      .update({
+        checkout_url: initResult.authorizationUrl,
+        gateway_response: initResult.raw as unknown as Json,
+      })
+      .eq("gateway_reference", masterReference);
+
+    return {
+      success: true,
+      reference: masterReference,
+      checkoutUrl: initResult.authorizationUrl,
+      isMock: false,
+    };
+  }
+
+  // ── Single Session Payment Fallback ─────────────────────────────────────────
   if (
     profile &&
     !isAlumnus(profile.role) &&
@@ -291,17 +434,19 @@ export async function initiatePaystackPayment(values: {
 
 export async function verifyPaystackPayment(reference: string) {
   try {
-    const { data: payment, error: findError } = await adminClient
+    const { data: payments, error: findError } = await adminClient
       .from("payments")
       .select("id, profile_id, status, gateway, payment_reference, gateway_reference")
-      .eq("payment_reference", reference)
-      .single();
+      .or(`payment_reference.eq.${reference},gateway_reference.eq.${reference}`);
 
-    if (findError || !payment) {
+    if (findError || !payments || payments.length === 0) {
       return { error: "Payment transaction record not found" };
     }
 
-    if (payment.status === "confirmed") {
+    const payment = payments[0];
+    const allConfirmed = payments.every((p) => p.status === "confirmed");
+
+    if (allConfirmed) {
       return { success: true, status: "confirmed", paymentId: payment.id };
     }
 
@@ -329,10 +474,11 @@ export async function verifyPaystackPayment(reference: string) {
       }
       return { success: true, status: "failed", paymentId: payment.id };
     } else if (verifyResult.status === "abandoned") {
+      const paymentIds = payments.map((p) => p.id);
       await adminClient
         .from("payments")
         .update({ status: "abandoned", gateway_response: verifyResult.raw as unknown as Json })
-        .eq("payment_reference", reference);
+        .in("id", paymentIds);
       return { success: true, status: "abandoned", paymentId: payment.id };
     }
 

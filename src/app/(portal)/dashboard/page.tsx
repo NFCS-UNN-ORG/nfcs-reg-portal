@@ -183,9 +183,9 @@ export default async function DashboardPage() {
     .filter((p) => p.status === "confirmed" && !["membership_levy", "annual_dues"].includes(p.dues_type))
     .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
 
-  // Outstanding: sum of fees for sessions that have no confirmed payment
+  // Outstanding: sum of fees for eligible sessions up to current level that have no confirmed payment
   const outstandingAmount = tracker
-    .filter((s) => s.existingPayment?.status !== "confirmed")
+    .filter((s) => s.isEligible && s.existingPayment?.status !== "confirmed")
     .reduce((sum, s) => sum + s.breakdown.total, 0);
 
   const memberStats = {

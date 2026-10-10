@@ -31,6 +31,7 @@ function ResetPasswordContent() {
 
   const [isVerifyingSession, setIsVerifyingSession] = React.useState(true);
   const [hasValidSession, setHasValidSession] = React.useState(false);
+  const [sessionError, setSessionError] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -50,6 +51,23 @@ function ResetPasswordContent() {
     if (savedLength) setMinPasswordLength(parseInt(savedLength, 10));
     if (savedNum !== null) setRequireNumbers(savedNum === "true");
     if (savedSym !== null) setRequireSymbols(savedSym === "true");
+
+    // Inspect URL hash or query params for Supabase errors (e.g. otp_expired)
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash;
+      if (hash.includes("error")) {
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+        const desc = hashParams.get("error_description");
+        if (desc) {
+          setSessionError(decodeURIComponent(desc.replace(/\+/g, " ")));
+        }
+      }
+      const searchParams = new URLSearchParams(window.location.search);
+      const queryErr = searchParams.get("error_description") || searchParams.get("error");
+      if (queryErr) {
+        setSessionError(decodeURIComponent(queryErr.replace(/\+/g, " ")));
+      }
+    }
 
     // Check if user has active recovery session
     const checkSession = async () => {
@@ -203,9 +221,11 @@ function ResetPasswordContent() {
 
             {!hasValidSession ? (
               <div className="flex flex-col items-center text-center gap-4 py-4">
-                <div className="flex items-center gap-2 rounded-lg bg-status-errorBackground p-3 text-xs font-semibold text-status-errorText border border-status-errorBorder w-full">
+                <div className="flex items-center gap-2 rounded-lg bg-status-errorBackground p-3 text-xs font-semibold text-status-errorText border border-status-errorBorder w-full text-left">
                   <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>Invalid or expired password reset link. Please request a new link.</span>
+                  <span>
+                    {sessionError || "Invalid or expired password reset link. Please request a new link."}
+                  </span>
                 </div>
                 <Button asChild variant="primary" className="w-full mt-2 text-xs font-semibold">
                   <Link href="/forgot-password">Request New Reset Link</Link>

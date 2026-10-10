@@ -43,6 +43,12 @@ export async function initiateFlutterwavePayment(values: {
   dues_type: PaymentFormValues["dues_type"];
   payment_period: string;
   notes?: string;
+  items?: Array<{
+    yearOrdinal: number;
+    session: string;
+    dues_type: "membership_levy" | "annual_dues";
+    amount: number;
+  }>;
 }) {
   const supabase = await createClient();
   const {
@@ -65,7 +71,140 @@ export async function initiateFlutterwavePayment(values: {
   const isMockCheckoutEnabled = process.env.OPAY_ENABLE_MOCK_CHECKOUT === "true";
   const hasFlutterwaveCredentials = isUsableSecret(readEnv("FLUTTERWAVE_SECRET_KEY"));
 
-  // Check required dues business logic
+  // ── Handle Batch Payment If Provided ─────────────────────────────────────────
+  if (values.items && values.items.length > 0 && profile && !isAlumnus(profile.role)) {
+    const levelOrdinal = getLevelOrdinal(profile.academic_level);
+    const totalCourseYears = getYearsOfStudy(
+      profile.faculty,
+      profile.department,
+    );
+
+    const { data: allPayments } = await adminClient
+      .from("payments")
+      .select("id, dues_type, payment_period, status, amount, payment_reference, payment_date, created_at")
+      .eq("profile_id", user.id);
+
+    const tracker = buildPaymentTracker({
+      currentLevelOrdinal: levelOrdinal,
+      totalCourseYears,
+      existingPayments: (allPayments || []).map((p) => ({
+        id: p.id,
+        dues_type: p.dues_type,
+        payment_period: p.payment_period,
+        status: p.status,
+        amount: p.amount,
+        payment_reference: p.payment_reference,
+        payment_date: p.payment_date,
+        created_at: p.created_at,
+      })),
+      currentSession: CURRENT_SESSION,
+    });
+
+    const sortedItems = [...values.items].sort((a, b) => a.yearOrdinal - b.yearOrdinal);
+
+    for (const item of sortedItems) {
+      if (item.yearOrdinal > levelOrdinal) {
+        return {
+          error: `Cannot pay dues for Year ${item.yearOrdinal}. You have not reached this academic level yet.`,
+        };
+      }
+      const existingSession = tracker.find((s) => s.yearOrdinal === item.yearOrdinal);
+      if (existingSession?.existingPayment?.status === "confirmed") {
+        return {
+          error: `Payment for ${existingSession.yearLabel} (${existingSession.session}) has already been confirmed.`,
+        };
+      }
+    }
+
+    const maxYear = Math.max(...sortedItems.map((i) => i.yearOrdinal));
+    for (let yr = 1; yr <= maxYear; yr++) {
+      const alreadyConfirmed = tracker.find((s) => s.yearOrdinal === yr)?.existingPayment?.status === "confirmed";
+      const included = sortedItems.some((i) => i.yearOrdinal === yr);
+      if (!alreadyConfirmed && !included) {
+        return {
+          error: `Sequential payment rule: Please include Year ${yr} before paying Year ${maxYear}.`,
+        };
+      }
+    }
+
+    const txRef = `NFCS-FLW-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
+    const appUrl = getAppUrl();
+    const redirectUrl = `${appUrl}/api/payments/flutterwave/verify/callback?tx_ref=${txRef}`;
+    const totalAmount = sortedItems.reduce((sum, i) => sum + i.amount, 0);
+    const combinedPeriods = sortedItems.map((i) => i.session).join(", ");
+
+    const childRecords = sortedItems.map((item) => ({
+      profile_id: user.id,
+      amount: item.amount,
+      dues_type: item.dues_type,
+      channel: "online" as const,
+      status: "pending" as const,
+      payment_reference: `${txRef}-Y${item.yearOrdinal}`,
+      gateway_reference: txRef,
+      gateway: (!hasFlutterwaveCredentials && isMockCheckoutEnabled) ? "mock_gateway" : "flutterwave",
+      payment_period: item.session,
+      notes: values.notes || null,
+      checkout_url: `${appUrl}/dues/pay/checkout?ref=${txRef}`,
+    }));
+
+    const { error: insertError } = await adminClient.from("payments").insert(childRecords);
+    if (insertError) {
+      return { error: insertError.message };
+    }
+
+    if (!hasFlutterwaveCredentials && isMockCheckoutEnabled) {
+      return {
+        success: true,
+        reference: txRef,
+        checkoutUrl: `${appUrl}/dues/pay/checkout?ref=${txRef}`,
+        isMock: true,
+      };
+    }
+
+    if (!hasFlutterwaveCredentials) {
+      return {
+        error:
+          "Flutterwave credentials are not configured. Please set FLUTTERWAVE_SECRET_KEY in settings or environment.",
+      };
+    }
+
+    const flutterwave = new FlutterwaveService();
+    const initResult = await flutterwave.initializePayment({
+      amount: totalAmount,
+      email: profile?.email || user.email || "student@nfcs-unn.org",
+      txRef,
+      redirectUrl,
+      customerName: profile?.full_name,
+      customerPhone: profile?.phone || undefined,
+      title: "NFCS Batch Dues Payment",
+      description: `Annual Dues for ${sortedItems.length} session(s): ${combinedPeriods}`,
+    });
+
+    if (!initResult.success) {
+      await adminClient
+        .from("payments")
+        .update({ status: "failed", gateway_response: { error: initResult.error } })
+        .eq("gateway_reference", txRef);
+      return { error: initResult.error };
+    }
+
+    await adminClient
+      .from("payments")
+      .update({
+        checkout_url: initResult.checkoutUrl,
+        gateway_response: initResult.raw as unknown as Json,
+      })
+      .eq("gateway_reference", txRef);
+
+    return {
+      success: true,
+      reference: txRef,
+      checkoutUrl: initResult.checkoutUrl,
+      isMock: false,
+    };
+  }
+
+  // ── Single Session Payment Fallback ─────────────────────────────────────────
   if (
     profile &&
     !isAlumnus(profile.role) &&
@@ -295,17 +434,19 @@ export async function verifyFlutterwavePayment(transactionIdOrRef: string) {
     const lookupRef = verifyResult.success && verifyResult.txRef ? verifyResult.txRef : transactionIdOrRef;
 
     // Find payment record by tx_ref or payment_reference / gateway_reference
-    const { data: payment, error: findError } = await adminClient
+    const { data: payments, error: findError } = await adminClient
       .from("payments")
       .select("id, profile_id, status, gateway, payment_reference, gateway_reference")
-      .or(`payment_reference.eq.${lookupRef},gateway_reference.eq.${lookupRef},payment_reference.eq.${transactionIdOrRef}`)
-      .single();
+      .or(`payment_reference.eq.${lookupRef},gateway_reference.eq.${lookupRef},payment_reference.eq.${transactionIdOrRef}`);
 
-    if (findError || !payment) {
+    if (findError || !payments || payments.length === 0) {
       return { error: "Payment transaction record not found" };
     }
 
-    if (payment.status === "confirmed") {
+    const payment = payments[0];
+    const allConfirmed = payments.every((p) => p.status === "confirmed");
+
+    if (allConfirmed) {
       return { success: true, status: "confirmed", paymentId: payment.id };
     }
 
@@ -317,7 +458,7 @@ export async function verifyFlutterwavePayment(transactionIdOrRef: string) {
       return { error: verifyResult.error };
     }
 
-    const reference = payment.payment_reference || lookupRef;
+    const reference = payment.gateway_reference || payment.payment_reference || lookupRef;
 
     if (verifyResult.status === "successful") {
       const confirmResult = await confirmOnlinePayment(reference, verifyResult.raw as unknown as Json);

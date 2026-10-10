@@ -31,6 +31,8 @@ export interface PaymentSession {
   /** Year 1 uses membership_levy (registration), subsequent years use annual_dues */
   feeType: "membership_levy" | "annual_dues";
   breakdown: NFCSFeeBreakdown;
+  isEligible: boolean;
+  isFuture: boolean;
   existingPayment?: {
     id: string;
     status: "pending" | "confirmed" | "failed" | "reversed";
@@ -155,11 +157,15 @@ export function buildPaymentTracker(params: {
   const { currentLevelOrdinal, totalCourseYears, existingPayments, currentSession = "2024/2025" } = params;
   if (currentLevelOrdinal === 0) return [];
 
-  return Array.from({ length: currentLevelOrdinal }, (_, i) => {
+  const totalYears = Math.max(currentLevelOrdinal, totalCourseYears || 4);
+
+  return Array.from({ length: totalYears }, (_, i) => {
     const yr = i + 1;
     const sessionLabel = deriveSessionLabel(currentLevelOrdinal, yr, currentSession);
     const breakdown = calculateFee(yr, totalCourseYears);
     const feeType: "membership_levy" | "annual_dues" = yr === 1 ? "membership_levy" : "annual_dues";
+    const isEligible = yr <= currentLevelOrdinal;
+    const isFuture = yr > currentLevelOrdinal;
 
     const matchingPayment = existingPayments
       .filter((p) => {
@@ -180,6 +186,8 @@ export function buildPaymentTracker(params: {
       yearLabel: breakdown.label,
       feeType,
       breakdown,
+      isEligible,
+      isFuture,
       existingPayment: matchingPayment
         ? {
             id: matchingPayment.id,
@@ -194,18 +202,29 @@ export function buildPaymentTracker(params: {
   });
 }
 
-/** Find the next session that is not confirmed yet */
+/** Find the next session that is not confirmed yet among eligible sessions */
 export function getNextOutstanding(tracker: PaymentSession[]): PaymentSession | null {
   return (
     tracker.find(
-      (s) => s.existingPayment?.status !== "confirmed"
+      (s) => s.isEligible && s.existingPayment?.status !== "confirmed"
     ) ?? null
   );
 }
 
-/** True if every session has a confirmed payment */
+/** All sessions up to current level that are not confirmed yet */
+export function getAllPayableOutstanding(tracker: PaymentSession[]): PaymentSession[] {
+  return tracker.filter(
+    (s) => s.isEligible && s.existingPayment?.status !== "confirmed"
+  );
+}
+
+/** True if every eligible session has a confirmed payment */
 export function isFullyPaid(tracker: PaymentSession[]): boolean {
-  return tracker.length > 0 && tracker.every((s) => s.existingPayment?.status === "confirmed");
+  const eligibleSessions = tracker.filter((s) => s.isEligible);
+  return (
+    eligibleSessions.length > 0 &&
+    eligibleSessions.every((s) => s.existingPayment?.status === "confirmed")
+  );
 }
 
 export function hasConfirmedRegistrationPayment(tracker: PaymentSession[]): boolean {

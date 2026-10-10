@@ -2,8 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database.types";
 
-const AUTH_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password"];
-const PUBLIC_ROUTES = ["/", ...AUTH_ROUTES, "/privacy", "/terms"];
+const AUTH_ROUTES = ["/login", "/register", "/forgot-password"];
+const PUBLIC_ROUTES = ["/", ...AUTH_ROUTES, "/reset-password", "/privacy", "/terms"];
 const CLAIM_ROUTE = "/claim-account";
 
 export async function middleware(request: NextRequest) {

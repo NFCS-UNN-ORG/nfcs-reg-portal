@@ -7,6 +7,7 @@ import { paymentSchema, type PaymentFormValues } from "@/lib/validations/payment
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { getMyPayments } from "@/lib/actions/payment.actions";
 import { initiatePaystackPayment } from "@/lib/actions/paystack.actions";
 import { initiateFlutterwavePayment } from "@/lib/actions/flutterwave.actions";
@@ -14,7 +15,7 @@ import { getPaymentSettings } from "@/lib/actions/dues-config.actions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, CreditCard, ChevronLeft, Info, ShieldCheck } from "lucide-react";
+import { AlertCircle, CreditCard, ChevronLeft, Info, ShieldCheck, Layers, CheckSquare } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
@@ -28,6 +29,7 @@ import {
   getPayableRequiredSession,
   isFullyPaid,
   isRequiredDuesType,
+  type PaymentSession,
 } from "@/lib/utils/fees";
 import { formatAmountInput, formatNaira, parseMoneyAmount } from "@/lib/utils/money";
 
@@ -53,6 +55,9 @@ function PayDuesFormContent() {
   const [isPaymentsLoading, setIsPaymentsLoading] = React.useState(true);
   const [activeGateway, setActiveGateway] = React.useState<"paystack" | "flutterwave">("paystack");
 
+  // Selected years for batch payment
+  const [selectedYearOrdinals, setSelectedYearOrdinals] = React.useState<number[]>([]);
+
   React.useEffect(() => {
     if (profile?.role === "super_admin") {
       router.push("/dashboard");
@@ -71,7 +76,7 @@ function PayDuesFormContent() {
 
   const activeGatewayName = activeGateway === "flutterwave" ? "Flutterwave" : "Paystack";
 
-  // Pre-fill from URL params (from tracker "Pay Now" button)
+  // Pre-fill from URL params
   const prefilledYear = searchParams.get("year");
   const prefilledSession = searchParams.get("session");
   const prefilledType = searchParams.get("type");
@@ -122,42 +127,52 @@ function PayDuesFormContent() {
   const nextRequiredSession = getPayableRequiredSession(tracker);
   const allRequiredPaid = isFullyPaid(tracker);
 
-  // Determine the target year ordinal: from URL or default to current level
-  const targetYearOrdinal = prefilledYear
-    ? parseInt(prefilledYear, 10)
-    : nextRequiredSession?.yearOrdinal ?? levelOrdinal;
-
-  // Calculate fee breakdown for the target year
-  const feeBreakdown = React.useMemo(
-    () =>
-      targetYearOrdinal > 0
-        ? calculateFee(targetYearOrdinal, totalCourseYears)
-        : null,
-    [targetYearOrdinal, totalCourseYears],
+  // Unpaid eligible sessions
+  const unpaidEligibleSessions = React.useMemo(
+    () => tracker.filter((s) => s.isEligible && s.existingPayment?.status !== "confirmed"),
+    [tracker]
   );
 
-  // Derive session label
-  const sessionLabel = prefilledSession
-    ? decodeURIComponent(prefilledSession)
-    : nextRequiredSession && !prefilledType
-      ? nextRequiredSession.session
-    : targetYearOrdinal > 0
-      ? deriveSessionLabel(levelOrdinal, targetYearOrdinal, CURRENT_SESSION)
-      : CURRENT_SESSION;
+  // Initialize selected year ordinals once tracker loads
+  React.useEffect(() => {
+    if (unpaidEligibleSessions.length > 0 && selectedYearOrdinals.length === 0) {
+      if (prefilledYear) {
+        const targetOrd = parseInt(prefilledYear, 10);
+        // Include target ord and any prior unpaid eligible years
+        const requiredOrds = unpaidEligibleSessions
+          .filter((s) => s.yearOrdinal <= targetOrd)
+          .map((s) => s.yearOrdinal);
+        setSelectedYearOrdinals(requiredOrds.length > 0 ? requiredOrds : [targetOrd]);
+      } else if (nextRequiredSession) {
+        setSelectedYearOrdinals([nextRequiredSession.yearOrdinal]);
+      }
+    }
+  }, [unpaidEligibleSessions, prefilledYear, nextRequiredSession, selectedYearOrdinals.length]);
+
+  // Selected sessions based on selection
+  const selectedSessions = React.useMemo(
+    () => tracker.filter((s) => selectedYearOrdinals.includes(s.yearOrdinal)),
+    [tracker, selectedYearOrdinals]
+  );
+
+  const batchTotalAmount = selectedSessions.reduce((sum, s) => sum + s.breakdown.total, 0);
 
   // Determine default dues type
   const defaultDuesType = prefilledType
     ? prefilledType
     : userIsAlumnus
       ? "special_levy"
-      : nextRequiredSession
-        ? nextRequiredSession.feeType
-        : "special_levy";
+      : selectedSessions.length > 0
+        ? selectedSessions[0].feeType
+        : nextRequiredSession
+          ? nextRequiredSession.feeType
+          : "special_levy";
 
-  // Default amount
-  const defaultAmount = !userIsAlumnus && isRequiredDuesType(defaultDuesType) && feeBreakdown
-      ? formatAmountInput(feeBreakdown.total.toString())
-      : "";
+  const sessionLabel = selectedSessions.length > 0
+    ? selectedSessions.map((s) => s.session).join(", ")
+    : prefilledSession
+      ? decodeURIComponent(prefilledSession)
+      : CURRENT_SESSION;
 
   const {
     register,
@@ -169,7 +184,7 @@ function PayDuesFormContent() {
   } = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
-      amount: defaultAmount,
+      amount: batchTotalAmount > 0 ? formatAmountInput(String(batchTotalAmount)) : "",
       dues_type: defaultDuesType as PaymentFormValues["dues_type"],
       payment_period: sessionLabel,
       notes: "",
@@ -177,48 +192,43 @@ function PayDuesFormContent() {
   });
 
   const watchedDuesType = watch("dues_type");
-  const watchedAmount = watch("amount");
   const selectedIsRequired = !userIsAlumnus && isRequiredDuesType(watchedDuesType);
-  const previousDuesTypeRef = React.useRef<PaymentFormValues["dues_type"] | undefined>(
-    defaultDuesType as PaymentFormValues["dues_type"],
-  );
 
-  // Recalculate amount when dues type changes (for students)
+  // Sync amount and period when selected sessions change
   React.useEffect(() => {
-    const duesTypeChanged = previousDuesTypeRef.current !== watchedDuesType;
-
-    if (!userIsAlumnus && feeBreakdown) {
-      if (watchedDuesType === "membership_levy" || watchedDuesType === "annual_dues") {
-        const requiredAmount = feeBreakdown.total.toString();
-        const formattedRequiredAmount = formatAmountInput(requiredAmount);
-        if (watchedAmount !== formattedRequiredAmount) {
-          setValue("amount", formattedRequiredAmount);
-        }
-      } else if (duesTypeChanged) {
-        if (watchedAmount !== "") {
-          setValue("amount", "");
-        }
-      }
+    if (selectedIsRequired && selectedSessions.length > 0) {
+      setValue("amount", formatAmountInput(String(batchTotalAmount)));
+      setValue("payment_period", selectedSessions.map((s) => s.session).join(", "));
     }
+  }, [selectedIsRequired, selectedSessions, batchTotalAmount, setValue]);
 
-    previousDuesTypeRef.current = watchedDuesType;
-  }, [watchedAmount, watchedDuesType, feeBreakdown, userIsAlumnus, setValue]);
+  // Toggle year selection with auto-continuity
+  const handleToggleYear = (yearOrdinal: number) => {
+    if (selectedYearOrdinals.includes(yearOrdinal)) {
+      // Uncheck this and any subsequent
+      const nextSelected = selectedYearOrdinals.filter((ord) => ord < yearOrdinal);
+      setSelectedYearOrdinals(nextSelected);
+    } else {
+      // Check this and all preceding unpaid eligible years
+      const priorUnpaidOrds = unpaidEligibleSessions
+        .filter((s) => s.yearOrdinal <= yearOrdinal)
+        .map((s) => s.yearOrdinal);
 
-  // Prefill when profile loads
-  React.useEffect(() => {
-    if (profile && !isPaymentsLoading) {
-      const newAmount = !userIsAlumnus && isRequiredDuesType(defaultDuesType) && feeBreakdown
-          ? formatAmountInput(feeBreakdown.total.toString())
-          : "";
-
-      reset({
-        amount: newAmount,
-        dues_type: defaultDuesType as PaymentFormValues["dues_type"],
-        payment_period: sessionLabel,
-        notes: "",
-      });
+      const nextSelected = Array.from(new Set([...selectedYearOrdinals, ...priorUnpaidOrds])).sort(
+        (a, b) => a - b
+      );
+      setSelectedYearOrdinals(nextSelected);
     }
-  }, [profile, isPaymentsLoading, defaultDuesType, feeBreakdown, reset, sessionLabel, userIsAlumnus]);
+  };
+
+  const handleSelectAllOutstanding = () => {
+    setSelectedYearOrdinals(unpaidEligibleSessions.map((s) => s.yearOrdinal));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedYearOrdinals([]);
+    setValue("amount", "");
+  };
 
   const onSubmit = async (values: PaymentFormValues) => {
     setIsLoading(true);
@@ -228,12 +238,29 @@ function PayDuesFormContent() {
       const settings = await getPaymentSettings();
       const gatewayToUse = settings?.activeGateway || activeGateway;
 
-      const payload = {
-        amount: parseMoneyAmount(values.amount),
-        dues_type: values.dues_type,
-        payment_period: values.payment_period,
-        notes: values.notes,
-      };
+      let payload: any;
+
+      if (selectedIsRequired && selectedSessions.length > 0) {
+        payload = {
+          amount: batchTotalAmount,
+          dues_type: selectedSessions[0].feeType,
+          payment_period: selectedSessions.map((s) => s.session).join(", "),
+          notes: values.notes,
+          items: selectedSessions.map((s) => ({
+            yearOrdinal: s.yearOrdinal,
+            session: s.session,
+            dues_type: s.feeType,
+            amount: s.breakdown.total,
+          })),
+        };
+      } else {
+        payload = {
+          amount: parseMoneyAmount(values.amount),
+          dues_type: values.dues_type,
+          payment_period: values.payment_period,
+          notes: values.notes,
+        };
+      }
 
       const response = gatewayToUse === "flutterwave"
         ? await initiateFlutterwavePayment(payload)
@@ -269,14 +296,13 @@ function PayDuesFormContent() {
   };
 
   // Available payment types based on role
-  const requiredOption = !userIsAlumnus && nextRequiredSession && !allRequiredPaid
+  const requiredOption = !userIsAlumnus && unpaidEligibleSessions.length > 0
     ? [
         {
-          value: nextRequiredSession.feeType,
-          label:
-            nextRequiredSession.feeType === "membership_levy"
-              ? "Registration Levy (1st Year)"
-              : `Annual Session Dues (${nextRequiredSession.yearLabel})`,
+          value: unpaidEligibleSessions[0].feeType,
+          label: `Academic Session Dues (${unpaidEligibleSessions.length} session${
+            unpaidEligibleSessions.length > 1 ? "s" : ""
+          } outstanding)`,
         },
       ]
     : [];
@@ -306,7 +332,7 @@ function PayDuesFormContent() {
       </div>
 
       {/* Card Wrapper */}
-      <Card className="max-w-[560px] mx-auto border border-neutrals-borderLight shadow-card bg-white">
+      <Card className="max-w-[620px] mx-auto border border-neutrals-borderLight shadow-card bg-white">
         <CardContent className="p-8">
           {/* Active Gateway Badge */}
           <div className="mb-4 flex items-center justify-between p-2.5 rounded-lg bg-surface-subtle border border-neutrals-border text-xs">
@@ -318,47 +344,6 @@ function PayDuesFormContent() {
             </Badge>
           </div>
 
-          {/* Fee Breakdown Info Box (students only) */}
-          {!userIsAlumnus && feeBreakdown && selectedIsRequired && (
-            <div className="mb-6 rounded-lg bg-brand-light border border-brand-border p-4">
-              <div className="flex items-start gap-2 mb-3">
-                <Info className="h-4 w-4 text-brand-accent shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="text-xs font-bold text-text-primary">
-                    {feeBreakdown.label} Fee Breakdown
-                  </p>
-                  <p className="text-[10px] text-text-tertiary">
-                    Session: {sessionLabel}
-                    {feeBreakdown.isFinalistYear && " (Finalist Year)"}
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-white/60 rounded-md p-2">
-                  <p className="text-[10px] text-text-tertiary">Annual Dues</p>
-                  <p className="text-sm font-bold text-text-primary font-mono">{formatNaira(feeBreakdown.annualDues)}</p>
-                </div>
-                <div className="bg-white/60 rounded-md p-2">
-                  <p className="text-[10px] text-text-tertiary">Constitution</p>
-                  <p className="text-sm font-bold text-text-primary font-mono">{formatNaira(feeBreakdown.constitution)}</p>
-                </div>
-                <div className="bg-white/60 rounded-md p-2">
-                  <p className="text-[10px] text-text-tertiary">CGAN</p>
-                  <p className="text-sm font-bold text-text-primary font-mono">
-                    {formatNaira(feeBreakdown.cgan)}
-                    {feeBreakdown.isFinalistYear && (
-                      <Badge variant="pending" className="ml-1.5 text-[8px] py-0">Finalist</Badge>
-                    )}
-                  </p>
-                </div>
-                <div className="bg-brand/5 rounded-md p-2 border border-brand-border">
-                  <p className="text-[10px] text-brand-accent font-semibold">Total</p>
-                  <p className="text-sm font-bold text-brand font-mono">{formatNaira(feeBreakdown.total)}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             {error && (
               <div className="flex items-center gap-2 rounded-lg bg-status-errorBackground p-3 text-xs font-semibold text-status-errorText border border-status-errorBorder animate-in fade-in-50">
@@ -368,7 +353,7 @@ function PayDuesFormContent() {
             )}
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-text-secondary">Dues Levy Type</label>
+              <label className="text-xs font-semibold text-text-secondary">Payment Category</label>
               <Select error={!!errors.dues_type} {...register("dues_type")} disabled={isLoading}>
                 {paymentTypeOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -379,8 +364,126 @@ function PayDuesFormContent() {
               {errors.dues_type && <p className="text-[11px] text-danger mt-1">{errors.dues_type.message}</p>}
             </div>
 
+            {/* ─── MULTI-SESSION BATCH CHECKLIST FOR STUDENTS ─── */}
+            {selectedIsRequired && unpaidEligibleSessions.length > 0 && (
+              <div className="rounded-xl border border-neutrals-borderLight bg-surface-page p-4 space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutrals-borderLight pb-2.5">
+                  <div className="space-y-0.5">
+                    <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                      <Layers className="h-3.5 w-3.5 text-brand-accent" />
+                      Select Academic Sessions to Pay
+                    </h3>
+                    <p className="text-[10px] text-text-tertiary">
+                      You can pay for all outstanding sessions in one checkout.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleSelectAllOutstanding}
+                      className="h-7 text-[10px] px-2.5 gap-1.5 text-brand-accent border-brand-border bg-white hover:bg-brand-light"
+                    >
+                      <CheckSquare className="h-3 w-3" />
+                      Pay All (
+                      {formatNaira(
+                        unpaidEligibleSessions.reduce((sum, s) => sum + s.breakdown.total, 0)
+                      )}
+                      )
+                    </Button>
+                    {selectedYearOrdinals.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleClearSelection}
+                        className="h-7 text-[10px] px-2 text-text-secondary"
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {tracker
+                    .filter((s) => s.isEligible)
+                    .map((session) => {
+                      const isPaid = session.existingPayment?.status === "confirmed";
+                      const isSelected = selectedYearOrdinals.includes(session.yearOrdinal);
+
+                      return (
+                        <div
+                          key={session.yearOrdinal}
+                          onClick={() => {
+                            if (!isPaid) handleToggleYear(session.yearOrdinal);
+                          }}
+                          className={`flex items-center justify-between p-2.5 rounded-lg border transition-all select-none ${
+                            isPaid
+                              ? "bg-emerald-50/40 border-emerald-200 cursor-default"
+                              : isSelected
+                                ? "bg-white border-brand-accent shadow-xs cursor-pointer"
+                                : "bg-white/70 border-neutrals-borderLight hover:border-gray-300 cursor-pointer"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Checkbox
+                              checked={isPaid || isSelected}
+                              disabled={isPaid}
+                              onChange={() => {
+                                if (!isPaid) handleToggleYear(session.yearOrdinal);
+                              }}
+                            />
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-text-primary">
+                                  {session.yearLabel}
+                                </span>
+                                <span className="text-[10px] font-mono text-text-tertiary bg-gray-100 px-1.5 py-0.2 rounded">
+                                  {session.session}
+                                </span>
+                                {session.yearOrdinal === 1 && (
+                                  <Badge variant="paid" className="text-[8px] py-0">
+                                    Registration
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-text-tertiary">
+                                Dues {formatNaira(session.breakdown.annualDues)} + Const{" "}
+                                {formatNaira(session.breakdown.constitution)} + CGAN{" "}
+                                {formatNaira(session.breakdown.cgan)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-text-primary">
+                              {formatNaira(session.breakdown.total)}
+                            </span>
+                            {isPaid ? (
+                              <Badge variant="paid" className="text-[9px]">Paid ✓</Badge>
+                            ) : isSelected ? (
+                              <Badge variant="pending" className="text-[9px]">Selected</Badge>
+                            ) : (
+                              <Badge variant="unpaid" className="text-[9px]">Unpaid</Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-text-secondary">Amount to Pay (₦)</label>
+              <label className="text-xs font-semibold text-text-secondary">
+                Amount to Pay (₦)
+                {selectedIsRequired && selectedSessions.length > 0 && (
+                  <span className="text-text-tertiary font-normal"> — sum of selected sessions</span>
+                )}
+              </label>
               <Input
                 error={!!errors.amount}
                 {...register("amount", {
@@ -390,22 +493,9 @@ function PayDuesFormContent() {
                 })}
                 placeholder="5000"
                 disabled={isLoading}
-                readOnly={selectedIsRequired}
-                className={
-                  selectedIsRequired
-                    ? "bg-gray-50 cursor-not-allowed"
-                    : ""
-                }
+                readOnly={selectedIsRequired && selectedSessions.length > 0}
+                className={selectedIsRequired && selectedSessions.length > 0 ? "bg-gray-50 cursor-not-allowed font-mono font-bold" : ""}
               />
-              {selectedIsRequired ? (
-                  <p className="text-[10px] text-text-tertiary">
-                    Amount is auto-calculated based on your academic level and programme.
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-text-tertiary">
-                    Enter the amount you want to pay.
-                  </p>
-                )}
               {errors.amount && <p className="text-[11px] text-danger mt-1">{errors.amount.message}</p>}
             </div>
 
@@ -416,6 +506,8 @@ function PayDuesFormContent() {
                 {...register("payment_period")}
                 placeholder="2024/2025"
                 disabled={isLoading}
+                readOnly={selectedIsRequired && selectedSessions.length > 0}
+                className={selectedIsRequired && selectedSessions.length > 0 ? "bg-gray-50 cursor-not-allowed" : ""}
               />
               {errors.payment_period && (
                 <p className="text-[11px] text-danger mt-1">{errors.payment_period.message}</p>
@@ -428,7 +520,7 @@ function PayDuesFormContent() {
               </label>
               <Input
                 {...register("notes")}
-                placeholder="e.g. Annual dues payment for 2024/2025 academic session"
+                placeholder="e.g. Session dues payment"
                 disabled={isLoading}
               />
             </div>
@@ -438,8 +530,12 @@ function PayDuesFormContent() {
               variant="primary"
               className="w-full gap-2 font-semibold h-11"
               isLoading={isLoading}
+              disabled={selectedIsRequired && selectedSessions.length === 0}
             >
-              <CreditCard className="h-4 w-4" /> Proceed to {activeGatewayName} Checkout
+              <CreditCard className="h-4 w-4" />
+              {selectedIsRequired && selectedSessions.length > 1
+                ? `Pay ${formatNaira(batchTotalAmount)} for ${selectedSessions.length} Sessions via ${activeGatewayName}`
+                : `Proceed to ${activeGatewayName} Checkout`}
             </Button>
           </form>
         </CardContent>
@@ -450,14 +546,16 @@ function PayDuesFormContent() {
 
 export default function PayDuesPage() {
   return (
-    <React.Suspense fallback={
-      <div className="flex h-[400px] items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutrals-borderLight border-t-brand" />
-          <p className="text-xs text-text-secondary">Loading payment details...</p>
+    <React.Suspense
+      fallback={
+        <div className="flex h-[400px] items-center justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutrals-borderLight border-t-brand" />
+            <p className="text-xs text-text-secondary">Loading payment details...</p>
+          </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <PayDuesFormContent />
     </React.Suspense>
   );

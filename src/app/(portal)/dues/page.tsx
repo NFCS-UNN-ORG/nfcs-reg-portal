@@ -69,7 +69,8 @@ function TrackerStep({
   const isFailed =
     session.existingPayment &&
     ["failed", "reversed"].includes(session.existingPayment.status);
-  const canPayRequired = nextPayableYear === session.yearOrdinal;
+  const isFuture = session.isFuture;
+  const canPayRequired = !isFuture && session.isEligible && nextPayableYear === session.yearOrdinal;
 
   return (
     <div className="flex gap-4">
@@ -84,7 +85,9 @@ function TrackerStep({
                 ? "bg-amber-100 border-amber-400 text-amber-600 animate-pulse"
                 : isFailed
                   ? "bg-red-100 border-red-400 text-red-500"
-                  : "bg-gray-100 border-gray-300 text-gray-400"
+                  : isFuture
+                    ? "bg-gray-50 border-gray-200 text-gray-300"
+                    : "bg-gray-100 border-gray-300 text-gray-400"
           }`}
         >
           {isPaid ? (
@@ -101,7 +104,7 @@ function TrackerStep({
         {!isLast && (
           <div
             className={`w-0.5 flex-1 min-h-[32px] ${
-              isPaid ? "bg-emerald-300" : "bg-gray-200"
+              isPaid ? "bg-emerald-300" : isFuture ? "bg-gray-100" : "bg-gray-200"
             }`}
           />
         )}
@@ -116,7 +119,9 @@ function TrackerStep({
               ? "bg-amber-50/50 border-amber-200"
               : isFailed
                 ? "bg-red-50/50 border-red-200"
-                : "bg-white border-neutrals-borderLight shadow-card"
+                : isFuture
+                  ? "bg-gray-50/60 border-gray-200/80 opacity-75"
+                  : "bg-white border-neutrals-borderLight shadow-card"
         }`}
       >
         <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -130,6 +135,9 @@ function TrackerStep({
               </span>
               {session.yearOrdinal === 1 && (
                 <Badge variant="paid" className="text-[9px]">Registration</Badge>
+              )}
+              {isFuture && (
+                <Badge variant="inactive" className="text-[9px]">Upcoming Level</Badge>
               )}
             </div>
 
@@ -195,6 +203,8 @@ function TrackerStep({
                   Pay Now <ArrowRight className="h-3 w-3" />
                 </Link>
               </Button>
+            ) : isFuture ? (
+              <Badge variant="inactive">Upcoming</Badge>
             ) : (
               <Badge variant="inactive">Locked</Badge>
             )}

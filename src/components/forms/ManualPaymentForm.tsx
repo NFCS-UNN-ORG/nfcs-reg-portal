@@ -7,24 +7,31 @@ import { manualPaymentSchema, type ManualPaymentFormValues } from "@/lib/validat
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { recordManualPayment, getMemberPaymentContext } from "@/lib/actions/payment.actions";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import {
+  recordManualPayment,
+  recordBatchManualPayment,
+  getMemberPaymentContext,
+  type BatchPaymentItem,
+} from "@/lib/actions/payment.actions";
 import { createClient } from "@/lib/supabase/client";
-import { AlertCircle, CheckCircle, Search, User, RefreshCw, Loader2, ShieldCheck } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  Search,
+  User,
+  RefreshCw,
+  Loader2,
+  ShieldCheck,
+  Layers,
+  CheckSquare,
+  Square,
+} from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { useUser } from "@/hooks/useUser";
-import { formatAmountInput, formatNaira } from "@/lib/utils/money";
-import { getLevelOrdinal, deriveSessionLabel, CURRENT_SESSION } from "@/lib/utils/fees";
-
-// Year fee breakdown (matching the fee engine)
-const DUES_YEARS: { label: string; value: string; total: number; breakdown: string; type: "membership_levy" | "annual_dues" | "special_levy" | "other" }[] = [
-  { label: "1st Year (Membership Levy)", value: "year_1", total: 500, breakdown: `${formatNaira(250)} dues + ${formatNaira(150)} const + ${formatNaira(100)} CGAN`, type: "membership_levy" },
-  { label: "2nd Year", value: "year_2", total: 400, breakdown: `${formatNaira(250)} dues + ${formatNaira(50)} const + ${formatNaira(100)} CGAN`, type: "annual_dues" },
-  { label: "3rd Year", value: "year_3", total: 400, breakdown: `${formatNaira(250)} dues + ${formatNaira(50)} const + ${formatNaira(100)} CGAN`, type: "annual_dues" },
-  { label: "4th Year (Non-finalist)", value: "year_4", total: 400, breakdown: `${formatNaira(250)} dues + ${formatNaira(50)} const + ${formatNaira(100)} CGAN`, type: "annual_dues" },
-  { label: "4th Year (Finalist)", value: "year_4f", total: 500, breakdown: `${formatNaira(250)} dues + ${formatNaira(50)} const + ${formatNaira(200)} CGAN`, type: "annual_dues" },
-  { label: "5th Year", value: "year_5", total: 400, breakdown: `${formatNaira(250)} dues + ${formatNaira(50)} const + ${formatNaira(100)} CGAN`, type: "annual_dues" },
-  { label: "6th Year (Finalist)", value: "year_6", total: 300, breakdown: `${formatNaira(250)} dues + ${formatNaira(50)} const + ${formatNaira(0)} CGAN`, type: "annual_dues" },
-];
+import { formatAmountInput, formatNaira, parseMoneyAmount } from "@/lib/utils/money";
+import { CURRENT_SESSION, type PaymentSession } from "@/lib/utils/fees";
 
 /** Generate a random invoice number in format REC-XXXXXX */
 function generateReceiptNumber(): string {
@@ -35,9 +42,8 @@ function generateReceiptNumber(): string {
 /** Return current academic session string, e.g. "2024/2025 Session" */
 function getCurrentSession(): string {
   const now = new Date();
-  const month = now.getMonth() + 1; // 1-12
+  const month = now.getMonth() + 1;
   const year = now.getFullYear();
-  // Academic year runs from ~October to September
   const startYear = month >= 10 ? year : year - 1;
   return `${startYear}/${startYear + 1} Session`;
 }
@@ -46,7 +52,7 @@ export function ManualPaymentForm() {
   const { toast } = useToast();
   const { profile: currentExco } = useUser();
   const [error, setError] = React.useState<string | null>(null);
-  const [success, setSuccess] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
 
   // Members lists
@@ -55,17 +61,18 @@ export function ManualPaymentForm() {
   const [selectedMember, setSelectedMember] = React.useState<any | null>(null);
   const [showMemberDropdown, setShowMemberDropdown] = React.useState(false);
 
-  // Dues year selection
-  const [selectedDuesYear, setSelectedDuesYear] = React.useState("");
+  // Member Payment Context & Multi-session selection
   const [memberContext, setMemberContext] = React.useState<any | null>(null);
   const [isContextLoading, setIsContextLoading] = React.useState(false);
-  const selectedDuesInfo = DUES_YEARS.find((d) => d.value === selectedDuesYear);
+  const [selectedYearOrdinals, setSelectedYearOrdinals] = React.useState<number[]>([]);
+  const [paymentMode, setPaymentMode] = React.useState<"dues" | "other">("dues");
 
   const {
     register,
     handleSubmit,
     setValue,
     reset,
+    watch,
     formState: { errors },
   } = useForm<ManualPaymentFormValues>({
     resolver: zodResolver(manualPaymentSchema),
@@ -91,7 +98,6 @@ export function ManualPaymentForm() {
     async function searchMembers() {
       const supabase = createClient();
       try {
-        // Search profiles — exclude super_admin role
         let profilesQuery = supabase
           .from("profiles")
           .select("id, full_name, email, matric_number, role, academic_level, faculty, department")
@@ -104,7 +110,6 @@ export function ManualPaymentForm() {
         }
         const { data: profilesData } = await profilesQuery.limit(5);
 
-        // Search legacy members
         let legacyQuery = supabase
           .from("legacy_members")
           .select("id, full_name, matric_number, academic_level")
@@ -140,89 +145,42 @@ export function ManualPaymentForm() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  const getYearOrdinal = (val: string) => {
-    switch (val) {
-      case "year_1": return 1;
-      case "year_2": return 2;
-      case "year_3": return 3;
-      case "year_4":
-      case "year_4f": return 4;
-      case "year_5": return 5;
-      case "year_6": return 6;
-      default: return 1;
-    }
-  };
-
-  const checkYearOptionStatus = (yearVal: string, context: any, member: any) => {
-    if (!context || !context.tracker || context.userIsAlumnus || context.currentLevelOrdinal === 0) {
-      return { disabled: false, labelSuffix: "" };
-    }
-
-    const ord = getYearOrdinal(yearVal);
-    const { currentLevelOrdinal, tracker } = context;
-
-    if (ord > currentLevelOrdinal) {
-      return {
-        disabled: true,
-        labelSuffix: ` (Not Reached — Student in ${member?.academic_level || "lower level"})`,
-      };
-    }
-
-    const targetSession = tracker.find((s: any) => s.yearOrdinal === ord);
-    if (targetSession?.existingPayment?.status === "confirmed") {
-      return { disabled: true, labelSuffix: " (Already Paid ✓)" };
-    }
-
-    if (ord > 1) {
-      const prevSession = tracker.find((s: any) => s.yearOrdinal === ord - 1);
-      if (prevSession && prevSession.existingPayment?.status !== "confirmed") {
-        return { disabled: true, labelSuffix: ` (Pay Year ${ord - 1} First)` };
-      }
-    }
-
-    return { disabled: false, labelSuffix: " (Payable Now)" };
-  };
-
-  const updatePaymentPeriod = (member: any, yearVal: string, contextOverride?: any) => {
-    if (!member) return;
-    const ctx = contextOverride || memberContext;
-    const currentLevelOrdinal = ctx?.currentLevelOrdinal ?? getLevelOrdinal(member.academic_level);
-    if (currentLevelOrdinal > 0) {
-      const targetYearOrdinal = getYearOrdinal(yearVal);
-      const sessionLabel = deriveSessionLabel(currentLevelOrdinal, targetYearOrdinal, CURRENT_SESSION);
-      setValue("payment_period", sessionLabel);
-    } else {
-      setValue("payment_period", CURRENT_SESSION);
-    }
-  };
-
   const selectMember = async (member: any) => {
     setSelectedMember(member);
     setValue("member_id", member.id);
     setSearchTerm("");
     setShowMemberDropdown(false);
     setIsContextLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+    setSelectedYearOrdinals([]);
 
     try {
       const contextRes = await getMemberPaymentContext(member.id);
       if (contextRes?.success) {
         setMemberContext(contextRes);
 
-        // Auto-select first payable year
-        const payableOption = DUES_YEARS.find((y) => {
-          const status = checkYearOptionStatus(y.value, contextRes, member);
-          return !status.disabled;
-        });
-
-        if (payableOption) {
-          setSelectedDuesYear(payableOption.value);
-          setValue("amount", formatAmountInput(String(payableOption.total)));
-          setValue("dues_type", payableOption.type);
-          updatePaymentPeriod(member, payableOption.value, contextRes);
+        if (!contextRes.userIsAlumnus && contextRes.tracker && contextRes.tracker.length > 0) {
+          setPaymentMode("dues");
+          // Pre-select first outstanding eligible session
+          const firstUnpaid = contextRes.tracker.find(
+            (s: PaymentSession) => s.isEligible && s.existingPayment?.status !== "confirmed"
+          );
+          if (firstUnpaid) {
+            setSelectedYearOrdinals([firstUnpaid.yearOrdinal]);
+            setValue("amount", formatAmountInput(String(firstUnpaid.breakdown.total)));
+            setValue("payment_period", firstUnpaid.session);
+            setValue("dues_type", firstUnpaid.feeType);
+          } else {
+            setSelectedYearOrdinals([]);
+            setValue("amount", "");
+            setValue("payment_period", CURRENT_SESSION);
+          }
         } else {
-          setSelectedDuesYear("");
-          setValue("amount", "");
+          setPaymentMode("other");
+          setValue("dues_type", "special_levy");
           setValue("payment_period", CURRENT_SESSION);
+          setValue("amount", "");
         }
       } else {
         setMemberContext(null);
@@ -234,16 +192,66 @@ export function ManualPaymentForm() {
     }
   };
 
-  const handleDuesYearChange = (yearVal: string) => {
-    setSelectedDuesYear(yearVal);
-    const info = DUES_YEARS.find((d) => d.value === yearVal);
-    if (info) {
-      setValue("amount", formatAmountInput(String(info.total)));
-      setValue("dues_type", info.type);
-      if (selectedMember) {
-        updatePaymentPeriod(selectedMember, yearVal);
+  // Compute unpaid eligible sessions from tracker
+  const tracker: PaymentSession[] = memberContext?.tracker || [];
+  const unpaidEligibleSessions = tracker.filter(
+    (s) => s.isEligible && s.existingPayment?.status !== "confirmed"
+  );
+
+  // Compute selected sessions and totals
+  const selectedSessions = tracker.filter((s) => selectedYearOrdinals.includes(s.yearOrdinal));
+  const batchTotalAmount = selectedSessions.reduce((sum, s) => sum + s.breakdown.total, 0);
+
+  // Toggle year selection with sequential auto-inclusion / unchecking
+  const handleToggleYear = (yearOrdinal: number) => {
+    if (selectedYearOrdinals.includes(yearOrdinal)) {
+      // Uncheck this year and any subsequent years that depend on it
+      const nextSelected = selectedYearOrdinals.filter((ord) => ord < yearOrdinal);
+      setSelectedYearOrdinals(nextSelected);
+
+      const remaining = tracker.filter((s) => nextSelected.includes(s.yearOrdinal));
+      const total = remaining.reduce((sum, s) => sum + s.breakdown.total, 0);
+      setValue("amount", formatAmountInput(String(total)));
+      setValue("payment_period", remaining.map((s) => s.session).join(", ") || CURRENT_SESSION);
+    } else {
+      // Check this year AND any prior unpaid eligible years to guarantee sequential integrity
+      const priorUnpaidOrds = unpaidEligibleSessions
+        .filter((s) => s.yearOrdinal <= yearOrdinal)
+        .map((s) => s.yearOrdinal);
+
+      const nextSelected = Array.from(new Set([...selectedYearOrdinals, ...priorUnpaidOrds])).sort(
+        (a, b) => a - b
+      );
+      setSelectedYearOrdinals(nextSelected);
+
+      const active = tracker.filter((s) => nextSelected.includes(s.yearOrdinal));
+      const total = active.reduce((sum, s) => sum + s.breakdown.total, 0);
+      setValue("amount", formatAmountInput(String(total)));
+      setValue("payment_period", active.map((s) => s.session).join(", "));
+      if (active.length > 0) {
+        setValue("dues_type", active[0].feeType);
       }
     }
+  };
+
+  // Quick Action: Select All Outstanding
+  const handleSelectAllOutstanding = () => {
+    const allUnpaidOrds = unpaidEligibleSessions.map((s) => s.yearOrdinal);
+    setSelectedYearOrdinals(allUnpaidOrds);
+
+    const total = unpaidEligibleSessions.reduce((sum, s) => sum + s.breakdown.total, 0);
+    setValue("amount", formatAmountInput(String(total)));
+    setValue("payment_period", unpaidEligibleSessions.map((s) => s.session).join(", "));
+    if (unpaidEligibleSessions.length > 0) {
+      setValue("dues_type", unpaidEligibleSessions[0].feeType);
+    }
+  };
+
+  // Quick Action: Clear Selection
+  const handleClearSelection = () => {
+    setSelectedYearOrdinals([]);
+    setValue("amount", "");
+    setValue("payment_period", CURRENT_SESSION);
   };
 
   const regenerateReceipt = () => {
@@ -254,36 +262,91 @@ export function ManualPaymentForm() {
     if (!currentExco) return;
     setIsLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
     try {
-      const result = await recordManualPayment(values, currentExco.id);
-      if (result?.error) {
-        setError(result.error);
-        toast({
-          title: "Failed to Record Dues",
-          description: result.error,
-          variant: "error",
-        });
+      if (paymentMode === "dues" && selectedSessions.length > 0) {
+        // ── Batch Payment Path ───────────────────────────────────────────────
+        const batchItems: BatchPaymentItem[] = selectedSessions.map((s) => ({
+          yearOrdinal: s.yearOrdinal,
+          session: s.session,
+          dues_type: s.feeType,
+          amount: s.breakdown.total,
+        }));
+
+        const result = await recordBatchManualPayment(
+          {
+            member_id: values.member_id,
+            items: batchItems,
+            receipt_number: values.receipt_number,
+            payment_date: values.payment_date,
+            notes: values.notes || undefined,
+          },
+          currentExco.id
+        );
+
+        if (result?.error) {
+          setError(result.error);
+          toast({
+            title: "Failed to Record Dues",
+            description: result.error,
+            variant: "error",
+          });
+        } else {
+          const successMsg = `Successfully recorded ${result.count ?? selectedSessions.length} session(s) (${formatNaira(
+            result.totalAmount ?? batchTotalAmount
+          )}) for ${selectedMember?.full_name}. Ref: ${result.batchReference ?? ""}`;
+          setSuccessMessage(successMsg);
+          reset({
+            member_id: "",
+            amount: "",
+            dues_type: "annual_dues",
+            payment_period: getCurrentSession(),
+            receipt_number: generateReceiptNumber(),
+            payment_date: new Date().toISOString().split("T")[0],
+            notes: "",
+          });
+          setSelectedMember(null);
+          setSelectedYearOrdinals([]);
+          setMemberContext(null);
+          toast({
+            title: "Batch Payment Recorded",
+            description: successMsg,
+            variant: "success",
+          });
+        }
       } else {
-        setSuccess(true);
-        reset({
-          member_id: "",
-          amount: "",
-          dues_type: "annual_dues",
-          payment_period: getCurrentSession(),
-          receipt_number: generateReceiptNumber(),
-          payment_date: new Date().toISOString().split("T")[0],
-          notes: "",
-        });
-        setSelectedMember(null);
-        setSelectedDuesYear("");
-        toast({
-          title: "Payment Recorded",
-          description: "Dues receipt has been logged successfully.",
-          variant: "success",
-        });
+        // ── Single / Other Payment Path ──────────────────────────────────────
+        const result = await recordManualPayment(values, currentExco.id);
+        if (result?.error) {
+          setError(result.error);
+          toast({
+            title: "Failed to Record Payment",
+            description: result.error,
+            variant: "error",
+          });
+        } else {
+          setSuccessMessage("Manual payment logged successfully.");
+          reset({
+            member_id: "",
+            amount: "",
+            dues_type: "annual_dues",
+            payment_period: getCurrentSession(),
+            receipt_number: generateReceiptNumber(),
+            payment_date: new Date().toISOString().split("T")[0],
+            notes: "",
+          });
+          setSelectedMember(null);
+          setSelectedYearOrdinals([]);
+          setMemberContext(null);
+          toast({
+            title: "Payment Recorded",
+            description: "Dues receipt has been logged successfully.",
+            variant: "success",
+          });
+        }
       }
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
@@ -292,19 +355,12 @@ export function ManualPaymentForm() {
 
   return (
     <div className="space-y-6">
-      {success && (
+      {successMessage && (
         <div className="flex items-center gap-3 p-4 rounded-xl bg-status-successBackground border border-status-successBorder text-status-successText">
           <CheckCircle className="h-5 w-5 shrink-0 text-status-successText" />
           <div className="space-y-0.5">
-            <h3 className="text-xs font-bold">Manual Payment Logged</h3>
-            <p className="text-[11px] leading-relaxed opacity-95">
-              The dues record has been saved. The member&apos;s dashboard and directory statement will automatically reflect this payment.
-              {currentExco && (
-                <span className="block mt-1 font-semibold text-[10px] opacity-90">
-                  Recorded by: {currentExco.full_name} ({currentExco.role === "super_admin" ? "Super Admin" : "Exco"})
-                </span>
-              )}
-            </p>
+            <h3 className="text-xs font-bold">Manual Payment Logged ✓</h3>
+            <p className="text-[11px] leading-relaxed opacity-95">{successMessage}</p>
           </div>
         </div>
       )}
@@ -320,7 +376,7 @@ export function ManualPaymentForm() {
         {/* Member Selector Search input */}
         <div className="space-y-1.5 relative">
           <label className="text-xs font-semibold text-text-secondary">Select Member</label>
-          
+
           {selectedMember ? (
             <div className="space-y-2 select-none">
               <div className="flex items-center justify-between p-3.5 rounded-lg border border-brand-border bg-brand-light text-brand-accent">
@@ -336,6 +392,11 @@ export function ManualPaymentForm() {
                         {selectedMember.academic_level}
                       </span>
                     )}
+                    {memberContext?.totalCourseYears && (
+                      <span className="ml-2 font-semibold text-[10px] text-text-tertiary bg-gray-100 px-1.5 py-0.5 rounded">
+                        {memberContext.totalCourseYears} Years Programme
+                      </span>
+                    )}
                   </div>
                 </div>
                 <Button
@@ -345,7 +406,7 @@ export function ManualPaymentForm() {
                     setSelectedMember(null);
                     setMemberContext(null);
                     setValue("member_id", "");
-                    setSelectedDuesYear("");
+                    setSelectedYearOrdinals([]);
                     setValue("amount", "");
                   }}
                   className="h-7 text-[11px] px-2"
@@ -358,36 +419,7 @@ export function ManualPaymentForm() {
               {isContextLoading ? (
                 <div className="flex items-center gap-2 p-2.5 rounded-lg bg-surface-subtle text-xs text-text-secondary border border-neutrals-border">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />
-                  <span>Loading student payment history & tracker...</span>
-                </div>
-              ) : memberContext ? (
-                <div className="p-3 rounded-lg bg-surface-page border border-neutrals-border space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between font-semibold text-text-primary text-[11px]">
-                    <span className="flex items-center gap-1.5">
-                      <ShieldCheck className="h-3.5 w-3.5 text-brand" /> Student Payment Tracker Summary
-                    </span>
-                    <span className="text-[10px] text-text-tertiary">
-                      {memberContext.userIsAlumnus ? "Alumni Account" : `Max Level: ${selectedMember.academic_level || "100 Level"}`}
-                    </span>
-                  </div>
-                  {memberContext.tracker && memberContext.tracker.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      {memberContext.tracker.map((s: any) => (
-                        <span
-                          key={s.yearOrdinal}
-                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                            s.existingPayment?.status === "confirmed"
-                              ? "bg-status-successBackground text-status-successText border-status-successBorder"
-                              : "bg-surface-subtle text-text-tertiary border-neutrals-border"
-                          }`}
-                        >
-                          {s.yearLabel}: {s.existingPayment?.status === "confirmed" ? "Paid ✓" : "Unpaid"}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-[10px] text-text-tertiary">No required session tracker for non-student role.</p>
-                  )}
+                  <span>Loading student payment history & course data...</span>
                 </div>
               ) : null}
             </div>
@@ -435,45 +467,194 @@ export function ManualPaymentForm() {
           )}
         </div>
 
-        {/* Dues Details */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {/* Year select — auto-fills amount */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-secondary">Year Paid For</label>
-            <select
-              value={selectedDuesYear}
-              onChange={(e) => handleDuesYearChange(e.target.value)}
-              className="h-10 w-full rounded-lg border border-gray-200 bg-white dark:bg-prussian-blue-2 px-3 py-1.5 text-[13px] text-text-primary focus:border-brand-accent focus:outline-none"
-            >
-              <option value="">Select academic year...</option>
-              {DUES_YEARS.map((y) => {
-                const status = checkYearOptionStatus(y.value, memberContext, selectedMember);
+        {/* ─── BATCH ACADEMIC SESSIONS SELECTOR ─── */}
+        {selectedMember && memberContext && !memberContext.userIsAlumnus && tracker.length > 0 && (
+          <div className="rounded-xl border border-neutrals-borderLight bg-white shadow-card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutrals-borderLight pb-3">
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                  <Layers className="h-4 w-4 text-brand-accent" />
+                  Select Academic Sessions to Record
+                </h3>
+                <p className="text-[11px] text-text-tertiary">
+                  Select one or multiple outstanding sessions. Years are tracked across their full{" "}
+                  <strong>{memberContext.totalCourseYears}-year programme</strong>.
+                </p>
+              </div>
+
+              {unpaidEligibleSessions.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleSelectAllOutstanding}
+                    className="h-7 text-[11px] px-2.5 gap-1.5 text-brand-accent border-brand-border bg-brand-light hover:bg-brand/15"
+                  >
+                    <CheckSquare className="h-3.5 w-3.5" />
+                    Select All Outstanding (
+                    {formatNaira(
+                      unpaidEligibleSessions.reduce((sum, s) => sum + s.breakdown.total, 0)
+                    )}
+                    )
+                  </Button>
+                  {selectedYearOrdinals.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleClearSelection}
+                      className="h-7 text-[11px] px-2 text-text-secondary"
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Checklist of all sessions in degree */}
+            <div className="space-y-2.5">
+              {tracker.map((session) => {
+                const isPaid = session.existingPayment?.status === "confirmed";
+                const isFuture = session.isFuture;
+                const isSelected = selectedYearOrdinals.includes(session.yearOrdinal);
+
                 return (
-                  <option key={y.value} value={y.value} disabled={status.disabled}>
-                    {y.label} — {formatNaira(y.total)}{status.labelSuffix}
-                  </option>
+                  <div
+                    key={session.yearOrdinal}
+                    onClick={() => {
+                      if (!isPaid && !isFuture) {
+                        handleToggleYear(session.yearOrdinal);
+                      }
+                    }}
+                    className={`flex items-center justify-between p-3 rounded-lg border transition-all select-none ${
+                      isPaid
+                        ? "bg-emerald-50/40 border-emerald-200 cursor-default"
+                        : isFuture
+                          ? "bg-gray-50/50 border-gray-200/80 opacity-60 cursor-not-allowed"
+                          : isSelected
+                            ? "bg-brand-light/60 border-brand-accent shadow-xs cursor-pointer"
+                            : "bg-surface-page border-neutrals-borderLight hover:border-gray-300 cursor-pointer"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        checked={isPaid || isSelected}
+                        disabled={isPaid || isFuture}
+                        onChange={() => {
+                          if (!isPaid && !isFuture) {
+                            handleToggleYear(session.yearOrdinal);
+                          }
+                        }}
+                      />
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs font-bold ${
+                              isSelected ? "text-brand-accent" : "text-text-primary"
+                            }`}
+                          >
+                            {session.yearLabel}
+                          </span>
+                          <span className="text-[10px] font-mono text-text-tertiary bg-white border border-gray-200 px-1.5 py-0.2 rounded">
+                            {session.session}
+                          </span>
+                          {session.yearOrdinal === 1 && (
+                            <Badge variant="paid" className="text-[9px] py-0">
+                              Registration
+                            </Badge>
+                          )}
+                          {session.breakdown.isFinalistYear && (
+                            <Badge variant="pending" className="text-[9px] py-0">
+                              Finalist
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-text-tertiary">
+                          {session.breakdown.annualDues > 0 &&
+                            `Dues ${formatNaira(session.breakdown.annualDues)}`}
+                          {session.breakdown.constitution > 0 &&
+                            ` + Const ${formatNaira(session.breakdown.constitution)}`}
+                          {session.breakdown.cgan > 0 &&
+                            ` + CGAN ${formatNaira(session.breakdown.cgan)}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-xs font-bold text-text-primary">
+                        {formatNaira(session.breakdown.total)}
+                      </span>
+                      {isPaid ? (
+                        <Badge variant="paid">Paid ✓</Badge>
+                      ) : isFuture ? (
+                        <Badge variant="inactive">Upcoming Level</Badge>
+                      ) : isSelected ? (
+                        <Badge variant="pending">Selected</Badge>
+                      ) : (
+                        <Badge variant="unpaid">Outstanding</Badge>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
-            </select>
-            {selectedDuesInfo && (
-              <p className="text-[11px] text-text-tertiary mt-1">
-                {selectedDuesInfo.breakdown} = <span className="font-bold text-text-primary">{formatNaira(selectedDuesInfo.total)}</span>
-              </p>
+            </div>
+
+            {/* Selection Summary Callout */}
+            {selectedSessions.length > 0 && (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-brand-light border border-brand-border text-xs text-brand-accent">
+                <span className="font-semibold">
+                  {selectedSessions.length} session(s) selected:{" "}
+                  <span className="font-normal">
+                    {selectedSessions.map((s) => s.yearLabel).join(", ")}
+                  </span>
+                </span>
+                <span className="font-mono font-bold text-sm">
+                  Total: {formatNaira(batchTotalAmount)}
+                </span>
+              </div>
             )}
           </div>
+        )}
 
+        {/* Amount & Period Inputs */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-secondary">Amount (₦) <span className="text-text-tertiary font-normal">— auto-filled</span></label>
+            <label className="text-xs font-semibold text-text-secondary">
+              Total Amount (₦){" "}
+              {paymentMode === "dues" && selectedSessions.length > 0 && (
+                <span className="text-text-tertiary font-normal">— calculated from sessions</span>
+              )}
+            </label>
             <Input
               error={!!errors.amount}
+              readOnly={paymentMode === "dues" && selectedSessions.length > 0}
               {...register("amount", {
                 onChange: (event) => {
                   event.target.value = formatAmountInput(event.target.value);
                 },
               })}
-              placeholder="auto-filled from year selection"
+              placeholder="e.g. 500"
             />
-            {errors.amount && <p className="text-[11px] text-danger mt-1">{errors.amount.message}</p>}
+            {errors.amount && (
+              <p className="text-[11px] text-danger mt-1">{errors.amount.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-text-secondary">
+              Session / Period
+            </label>
+            <Input
+              error={!!errors.payment_period}
+              readOnly={paymentMode === "dues" && selectedSessions.length > 0}
+              {...register("payment_period")}
+              placeholder="e.g. 2024/2025 Session"
+            />
+            {errors.payment_period && (
+              <p className="text-[11px] text-danger mt-1">{errors.payment_period.message}</p>
+            )}
           </div>
         </div>
 
@@ -486,21 +667,23 @@ export function ManualPaymentForm() {
               <option value="special_levy">Special Levy</option>
               <option value="other">Other Levy</option>
             </Select>
-            {errors.dues_type && <p className="text-[11px] text-danger mt-1">{errors.dues_type.message}</p>}
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-secondary">Session / Period <span className="text-text-tertiary font-normal">— auto-filled</span></label>
-            <Input error={!!errors.payment_period} {...register("payment_period")} placeholder="2024/2025 Session" />
-            {errors.payment_period && <p className="text-[11px] text-danger mt-1">{errors.payment_period.message}</p>}
+            {errors.dues_type && (
+              <p className="text-[11px] text-danger mt-1">{errors.dues_type.message}</p>
+            )}
           </div>
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-text-secondary">
-              Receipt Number <span className="text-text-tertiary font-normal">— auto-generated</span>
+              Receipt Number{" "}
+              <span className="text-text-tertiary font-normal">— auto-generated</span>
             </label>
             <div className="relative">
-              <Input error={!!errors.receipt_number} {...register("receipt_number")} placeholder="REC-XXXXXX" className="pr-10" />
+              <Input
+                error={!!errors.receipt_number}
+                {...register("receipt_number")}
+                placeholder="REC-XXXXXX"
+                className="pr-10"
+              />
               <button
                 type="button"
                 onClick={regenerateReceipt}
@@ -510,13 +693,17 @@ export function ManualPaymentForm() {
                 <RefreshCw className="h-4 w-4" />
               </button>
             </div>
-            {errors.receipt_number && <p className="text-[11px] text-danger mt-1">{errors.receipt_number.message}</p>}
+            {errors.receipt_number && (
+              <p className="text-[11px] text-danger mt-1">{errors.receipt_number.message}</p>
+            )}
           </div>
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-text-secondary">Payment Date</label>
             <Input error={!!errors.payment_date} type="date" {...register("payment_date")} />
-            {errors.payment_date && <p className="text-[11px] text-danger mt-1">{errors.payment_date.message}</p>}
+            {errors.payment_date && (
+              <p className="text-[11px] text-danger mt-1">{errors.payment_date.message}</p>
+            )}
           </div>
         </div>
 
@@ -526,8 +713,18 @@ export function ManualPaymentForm() {
         </div>
 
         <div className="flex justify-end pt-4 border-t border-neutrals-borderLight">
-          <Button type="submit" variant="primary" className="px-6 h-10 text-xs font-semibold" isLoading={isLoading}>
-            Record Dues Payment
+          <Button
+            type="submit"
+            variant="primary"
+            className="px-6 h-10 text-xs font-semibold"
+            isLoading={isLoading}
+            disabled={!selectedMember || (paymentMode === "dues" && selectedSessions.length === 0)}
+          >
+            {paymentMode === "dues" && selectedSessions.length > 1
+              ? `Record Batch Payment for ${selectedSessions.length} Sessions (${formatNaira(
+                  batchTotalAmount
+                )})`
+              : "Record Dues Payment"}
           </Button>
         </div>
       </form>

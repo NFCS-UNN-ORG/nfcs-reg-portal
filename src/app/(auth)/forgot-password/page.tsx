@@ -16,6 +16,16 @@ export default function ForgotPasswordPage() {
   const [success, setSuccess] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
 
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const err = params.get("error");
+      if (err) {
+        setError(decodeURIComponent(err.replace(/\+/g, " ")));
+      }
+    }
+  }, []);
+
   const {
     register,
     handleSubmit,
