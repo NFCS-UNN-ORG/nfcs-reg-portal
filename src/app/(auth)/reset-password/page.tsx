@@ -75,20 +75,11 @@ function ResetPasswordContent() {
           return;
         }
 
-        // If ?code= is present in the URL, exchange it directly on client
+        // If ?code= is present in the URL, redirect to /auth/callback so the server client exchanges it with matching cookies/PKCE
         const code = searchParams.get("code");
         if (code) {
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-          if (exchangeError) {
-            console.error("[reset-password] code exchange error:", exchangeError);
-            setSessionError(exchangeError.message);
-            setIsVerifyingSession(false);
-            return;
-          } else {
-            setHasValidSession(true);
-            setIsVerifyingSession(false);
-            return;
-          }
+          window.location.href = `/auth/callback?code=${encodeURIComponent(code)}&next=/reset-password`;
+          return;
         }
       }
 
