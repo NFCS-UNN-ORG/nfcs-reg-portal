@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database.types";
 
 const AUTH_ROUTES = ["/login", "/register", "/forgot-password"];
-const PUBLIC_ROUTES = ["/", ...AUTH_ROUTES, "/reset-password", "/privacy", "/terms"];
+const PUBLIC_ROUTES = ["/", ...AUTH_ROUTES, "/reset-password", "/auth/confirm", "/auth/callback", "/privacy", "/terms"];
 const CLAIM_ROUTE = "/claim-account";
 
 export async function middleware(request: NextRequest) {

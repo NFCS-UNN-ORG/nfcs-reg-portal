@@ -3,23 +3,7 @@ import Link from "next/link";
 import { AuthContainer } from "@/components/auth/AuthContainer";
 
 
-import { redirect } from "next/navigation";
-
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
-  const resolvedParams = await searchParams;
-  const next = resolvedParams?.next as string | undefined;
-  const code = resolvedParams?.code as string | undefined;
-
-  // If Supabase redirected recovery link with next=/reset-password or code
-  if (next?.includes("reset-password") || (code && next?.includes("reset-password"))) {
-    const codeParam = code ? `&code=${encodeURIComponent(code)}` : "";
-    redirect(`/reset-password?next=/reset-password${codeParam}`);
-  }
-
+export default function LoginPage() {
   return (
     <main className="min-h-screen w-full flex items-center justify-center bg-surface-page py-12 px-4 relative overflow-hidden">
       <div className="w-full max-w-[850px] flex flex-col gap-6 relative z-10 animate-in fade-in duration-300 items-center">

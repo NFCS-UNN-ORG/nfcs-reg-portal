@@ -52,65 +52,83 @@ function ResetPasswordContent() {
     if (savedNum !== null) setRequireNumbers(savedNum === "true");
     if (savedSym !== null) setRequireSymbols(savedSym === "true");
 
-    // Inspect URL hash or query params for Supabase errors or auth code
-    const checkSession = async () => {
-      const supabase = createClient();
+    let isMounted = true;
 
-      if (typeof window !== "undefined") {
-        const hash = window.location.hash;
-        if (hash.includes("error")) {
-          const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
-          const desc = hashParams.get("error_description");
-          if (desc) {
-            setSessionError(decodeURIComponent(desc.replace(/\+/g, " ")));
-            setIsVerifyingSession(false);
-            return;
-          }
-        }
-        const searchParams = new URLSearchParams(window.location.search);
-        const queryErr = searchParams.get("error_description") || searchParams.get("error");
-        if (queryErr) {
-          setSessionError(decodeURIComponent(queryErr.replace(/\+/g, " ")));
-          setIsVerifyingSession(false);
-          return;
-        }
+    // Check query params for error or old-format link
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const queryErr = searchParams.get("error") || searchParams.get("error_description");
+      const hasOldCode = searchParams.has("code");
 
-        // If ?code= is present in the URL, redirect to /auth/callback so the server client exchanges it with matching cookies/PKCE
-        const code = searchParams.get("code");
-        if (code) {
-          window.location.href = `/auth/callback?code=${encodeURIComponent(code)}&next=/reset-password`;
-          return;
-        }
+      if (queryErr || hasOldCode) {
+        setSessionError("This reset link is invalid or has expired.");
+        setIsVerifyingSession(false);
+        return;
       }
+    }
 
-      // Check if user has active recovery session
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session) {
-        setHasValidSession(true);
-      } else {
-        // Also listen for auth state changes (e.g. hash token exchange)
+    // Set a hard timeout of 8 seconds to prevent endless spinning
+    const timeoutId = setTimeout(() => {
+      if (isMounted) {
+        setIsVerifyingSession(false);
+        setSessionError((prev) => prev || "This reset link is invalid or has expired.");
+      }
+    }, 8000);
+
+    const checkSession = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+        if (user && !userError) {
+          if (isMounted) {
+            setHasValidSession(true);
+            setIsVerifyingSession(false);
+            clearTimeout(timeoutId);
+          }
+          return;
+        }
+
+        // Fallback to getSession
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          if (isMounted) {
+            setHasValidSession(true);
+            setIsVerifyingSession(false);
+            clearTimeout(timeoutId);
+          }
+          return;
+        }
+
+        // Listen for recovery event if session is being established
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
           if (session && (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN")) {
-            setHasValidSession(true);
+            if (isMounted) {
+              setHasValidSession(true);
+              setIsVerifyingSession(false);
+              clearTimeout(timeoutId);
+            }
           }
         });
 
-        // Small delay to allow hash token parsing if present
-        setTimeout(async () => {
-          const { data: { session: currentSession } } = await supabase.auth.getSession();
-          if (currentSession) {
-            setHasValidSession(true);
-          }
-          setIsVerifyingSession(false);
+        return () => {
           subscription.unsubscribe();
-        }, 1200);
-        return;
+        };
+      } catch (err) {
+        if (isMounted) {
+          setIsVerifyingSession(false);
+          setSessionError("This reset link is invalid or has expired.");
+          clearTimeout(timeoutId);
+        }
       }
-      setIsVerifyingSession(false);
     };
 
     checkSession();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   const {
@@ -158,12 +176,16 @@ function ResetPasswordContent() {
     }
 
     try {
-      const response = await updatePassword(values.password);
-      if (response?.error) {
-        setError(response.error);
+      const supabase = createClient();
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: values.password,
+      });
+
+      if (updateError) {
+        setError(updateError.message);
         toast({
           title: "Reset Failed",
-          description: response.error,
+          description: updateError.message,
           variant: "error",
         });
       } else {
@@ -173,6 +195,10 @@ function ResetPasswordContent() {
           description: "Your password has been successfully reset. Redirecting to login...",
           variant: "success",
         });
+
+        // Sign the user out before redirecting to login page
+        await supabase.auth.signOut();
+
         setTimeout(() => {
           router.push("/login");
         }, 2500);

@@ -7,9 +7,9 @@ import { forgotPasswordSchema, type ForgotPasswordFormValues } from "@/lib/valid
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { requestPasswordReset } from "@/lib/actions/auth.actions";
 import { AlertCircle, CheckCircle2, ChevronLeft } from "lucide-react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 
 export default function ForgotPasswordPage() {
   const [error, setError] = React.useState<string | null>(null);
@@ -43,13 +43,20 @@ export default function ForgotPasswordPage() {
     setSuccess(false);
 
     try {
-      // First try the server action (which sends via Resend custom email template if configured)
-      const formData = new FormData();
-      formData.append("email", values.email);
-      const response = await requestPasswordReset(formData);
+      const supabase = createClient();
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://portal.nfcsunn.org";
+      const redirectTo = `${origin}/auth/confirm?next=/reset-password`;
 
-      if (response?.error) {
-        setError(response.error);
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(values.email.trim().toLowerCase(), {
+        redirectTo,
+      });
+
+      if (resetError) {
+        if (resetError.status === 429) {
+          setError(resetError.message);
+        } else {
+          setSuccess(true);
+        }
       } else {
         setSuccess(true);
       }
